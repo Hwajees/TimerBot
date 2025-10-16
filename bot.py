@@ -1,151 +1,117 @@
 import os
 import asyncio
-from datetime import timedelta
-from telegram import Update, ForceReply
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from flask import Flask, request
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# ------------------
-# Environment Variables
-# ------------------
-BOT_TOKEN = os.environ['BOT_TOKEN']
-GROUP_ID = int(os.environ['GROUP_ID'])
-WEBHOOK_URL = os.environ['WEBHOOK_URL']
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+GROUP_ID = int(os.environ.get("GROUP_ID"))
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# ------------------
-# Flask app for webhook
-# ------------------
-app = Flask(__name__)
+# حالة البوت
+sessions = {}  # {chat_id: session_data}
 
-# ------------------
-# Global state
-# ------------------
-debate_data = {}
-current_speaker = None
-remaining_time = None
-round_number = 1
-current_user_id = None
-is_paused = False
+# تسجيل المشرفين تلقائياً
+def get_or_add_admin(session, user_id):
+    if "admins" not in session:
+        session["admins"] = []
+    if user_id not in session["admins"]:
+        session["admins"].append(user_id)
+    return session["admins"]
 
-# ------------------
-# Helper functions
-# ------------------
-async def send_group_message(app, text):
-    await app.bot.send_message(chat_id=GROUP_ID, text=text, parse_mode='HTML')
-
-def format_time(seconds):
-    m, s = divmod(seconds, 60)
-    return f"{int(m):02}:{int(s):02}"
-
-# ------------------
-# Commands
-# ------------------
-async def start_debate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global debate_data, current_user_id
-    user = update.effective_user
-    if update.effective_chat.id != GROUP_ID:
-        return
-    if not update.effective_user.id in context.bot_data.get('admins', []):
-        return
-
-    if not current_user_id:
-        current_user_id = user.id
-        debate_data.clear()
-        await update.message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
-
+# بدء البوت عند أي رسالة في المجموعة
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global debate_data, current_user_id
-    user = update.effective_user
-
-    if update.effective_chat.id != GROUP_ID:
-        return
-
-    if not user.id in context.bot_data.get('admins', []):
-        return
-
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
     text = update.message.text.strip()
 
-    if current_user_id and user.id != current_user_id:
-        # بعد التسجيل الأولي، أي مشرف يمكن استخدام الأوامر
-        pass
+    if chat_id != GROUP_ID:
+        return  # تجاهل أي رسائل خارج المجموعة
 
-    # تسجيل بيانات المناظرة الأولية
-    if 'title' not in debate_data:
-        debate_data['title'] = text
+    # إنشاء جلسة جديدة إذا لم تكن موجودة
+    if chat_id not in sessions:
+        sessions[chat_id] = {
+            "step": 0,  # خطوات التسجيل
+            "data": {},
+            "admins": [],
+            "turn": 0,  # الدور الحالي
+            "time_left": 0
+        }
+
+    session = sessions[chat_id]
+
+    # تسجيل أول مشرف
+    if session["step"] == 0:
+        get_or_add_admin(session, user_id)
+
+    # تحقق من المشرف
+    if user_id not in session["admins"]:
+        return  # تجاهل الأعضاء العاديين
+
+    # خطوات التسجيل
+    if session["step"] == 0 and text.lower() in ["بوت المؤقت", "المؤقت", "بوت الساعة", "بوت الساعه", "الساعة", "الساعه"]:
+        await update.message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
+        session["step"] = 1
+        return
+
+    if session["step"] == 1:
+        session["data"]["title"] = text
         await update.message.reply_text(f"تم تسجيل العنوان: {text}\nالآن أرسل اسم المحاور الأول:")
+        session["step"] = 2
         return
 
-    if 'speaker1' not in debate_data:
-        debate_data['speaker1'] = text
+    if session["step"] == 2:
+        session["data"]["speaker1"] = text
         await update.message.reply_text(f"تم تسجيل المحاور الأول: {text}\nأرسل اسم المحاور الثاني:")
+        session["step"] = 3
         return
 
-    if 'speaker2' not in debate_data:
-        debate_data['speaker2'] = text
+    if session["step"] == 3:
+        session["data"]["speaker2"] = text
         await update.message.reply_text(f"تم تسجيل المحاور الثاني: {text}\nأدخل الوقت لكل مداخلة (مثال: 3د):")
+        session["step"] = 4
         return
 
-    if 'time' not in debate_data:
-        # تحويل الوقت للنظام الداخلي
-        try:
-            if 'د' in text:
-                minutes = int(text.replace('د',''))
-                debate_data['time'] = minutes * 60
-                await update.message.reply_text(f"تم تحديد الوقت: {minutes} دقيقة.\nاكتب 'ابدأ الوقت' للبدء.")
-            else:
-                await update.message.reply_text("استخدم الصيغة الصحيحة مثل: 5د")
-        except:
-            await update.message.reply_text("خطأ في إدخال الوقت، حاول مرة أخرى.")
+    if session["step"] == 4:
+        session["data"]["duration"] = text
+        await update.message.reply_text(
+            f"تم تحديد الوقت: {text}.\nاكتب 'ابدأ الوقت' للبدء."
+        )
+        session["step"] = 5
         return
 
-    # الأوامر أثناء المناظرة
-    await handle_debate_commands(update, context)
+    # إدارة الأوامر أثناء الجلسة
+    if session["step"] >= 5:
+        if text.lower() == "ابدأ الوقت":
+            session["turn"] = 1
+            await update.message.reply_text(
+                f"⏳ تم بدء المناظرة!\nالمتحدث الآن: 🟢 {session['data']['speaker1']}"
+            )
+        elif text.lower() == "تبديل":
+            session["turn"] = 2 if session["turn"] == 1 else 1
+            speaker = session["data"]["speaker1"] if session["turn"] == 1 else session["data"]["speaker2"]
+            color = "🟢" if session["turn"] == 1 else "🔵"
+            await update.message.reply_text(f"🔁 الدور الآن: {color} {speaker}")
+        elif text.lower() == "نهاية":
+            s1, s2 = session["data"]["speaker1"], session["data"]["speaker2"]
+            await update.message.reply_text(
+                f"🕒 المناظرة انتهت!\nالمتحدثون: 🟢 {s1} 🔵 {s2}"
+            )
+        # يمكن إضافة بقية الأوامر هنا بنفس الطريقة
 
-async def handle_debate_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global current_speaker, remaining_time, round_number, is_paused
-    text = update.message.text.strip()
+# إنشاء التطبيق وتشغيله
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    if text == 'ابدأ الوقت':
-        current_speaker = 'speaker1'
-        remaining_time = debate_data['time']
-        await send_group_message(context.application, f"⏳ تم بدء المناظرة!\nالمتحدث الآن: 🟢 {debate_data[current_speaker]}")
-        asyncio.create_task(run_timer(context.application))
-        return
+# Webhook
+async def on_startup(app):
+    await app.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
 
-    # إضافة باقي أوامر تبديل، توقف، استئناف، تنازل، اضف، انقص، اعادة، نهاية
-    # (سيتم تطويرها لاحقًا بالتفصيل)
+app.post_init = on_startup
 
-async def run_timer(app):
-    global remaining_time, current_speaker, round_number, is_paused
-    while remaining_time > 0:
-        if not is_paused:
-            await asyncio.sleep(1)
-            remaining_time -= 1
-        # يمكن إرسال تحديث كل دقيقة أو 30 ثانية
-
-# ------------------
-# Flask webhook endpoint
-# ------------------
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.create_task(app_bot.process_update(update))
-    return 'ok'
-
-# ------------------
-# Main
-# ------------------
-app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
-
-# إعداد قائمة المشرفين في bot_data (يمكن تحديثها حسب الحاجة)
-app_bot.bot_data['admins'] = []  # ضع هنا IDs المشرفين
-
-app_bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-app_bot.add_handler(CommandHandler('start', start_debate))
-
-# تشغيل Webhook
-bot = app_bot.bot
-asyncio.get_event_loop().run_until_complete(bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}"))
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+if __name__ == "__main__":
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 10000)),
+        url_path=BOT_TOKEN,
+        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    )
