@@ -40,13 +40,18 @@ async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== تحديث قائمة المشرفين تلقائيًا =====
 async def update_admins(bot):
-    global admins
-    async for chat in bot.get_updates():
-        if chat.message and chat.message.chat.type in ["group", "supergroup"]:
-            chat_id = chat.message.chat.id
-            members = await bot.get_chat_administrators(chat_id)
-            admins.update([m.user.id for m in members])
-    print("تم تحديث قائمة المشرفين:", admins)
+    global all_admins
+    all_admins = set()
+
+    updates = await bot.get_updates()
+    for update in updates:
+        chat = update.effective_chat
+        if chat:
+            admins = await bot.get_chat_administrators(chat.id)
+            admin_ids = [admin.user.id for admin in admins]
+            all_admins.update(admin_ids)
+
+    print(f"تم تحديث قائمة المشرفين: {all_admins}")
 
 # ===== دوال المساعدة =====
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
