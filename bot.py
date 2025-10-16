@@ -36,7 +36,7 @@ trigger_words = ["بوت المؤقت","المؤقت","بوت الساعة","ب�
 # -----------------------------
 # عداد الوقت
 # -----------------------------
-async def timer_loop(message: Message):
+async def timer_loop():
     while debate_data["active"] and not debate_data["paused"]:
         await asyncio.sleep(1)
         if debate_data["remaining_time"] > 0:
@@ -110,7 +110,7 @@ async def handle_message(client: Client, message: Message):
             debate_data["paused"] = False
             await message.reply_text("تم بدء المناظرة!")
             await send_debate_status(message)
-            asyncio.create_task(timer_loop(message))
+            asyncio.create_task(timer_loop())
             return
 
     # أوامر بعد بدء المناظرة
@@ -134,7 +134,7 @@ async def handle_message(client: Client, message: Message):
         # استئناف
         if text == "استئناف":
             debate_data["paused"] = False
-            asyncio.create_task(timer_loop(message))
+            asyncio.create_task(timer_loop())
             await message.reply_text(f"▶️ تم استئناف المؤقت.\nالمتحدث الآن: {debate_data['current_speaker']}")
             return
 
@@ -219,4 +219,6 @@ def run_flask():
 # -----------------------------
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
-    bot.run()
+    asyncio.run(bot.start())
+    from pyrogram import idle
+    idle()
