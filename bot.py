@@ -1,120 +1,208 @@
 import os
-import asyncio
-from telegram import Update
-from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from flask import Flask
+import re
+import time
 import threading
+from datetime import timedelta
+from flask import Flask
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    filters, ContextTypes
+)
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-GROUP_ID = int(os.environ.get("GROUP_ID"))
+# =============================
+# إعداد المتغيرات من البيئة
+# =============================
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GROUP_ID = int(os.getenv("GROUP_ID"))
+PORT = int(os.getenv("PORT", 10000))
 
-debate_data = {
-    "active": False,
-    "initiator": None,
-    "title": "",
-    "speaker1": "",
-    "speaker2": "",
-    "time_per_turn": 0,
-    "current_speaker": "",
-    "remaining_time": 0,
-    "round": 1,
-    "turns_count": {},
-    "over_time": 0,
-    "paused": False,
-    "message_id": None
-}
+# =============================
+# تشغيل Flask للحفاظ على عمل البوت
+# =============================
+app = Flask(__name__)
 
-trigger_words = ["بوت المؤقت","المؤقت","بوت الساعة","بوت الساعه","الساعة","الساعه"]
-
-async def timer_loop(app, chat_id):
-    while debate_data["active"]:
-        await asyncio.sleep(1)
-        if not debate_data["paused"]:
-            if debate_data["remaining_time"] > 0:
-                debate_data["remaining_time"] -= 1
-            else:
-                debate_data["over_time"] += 1
-            if debate_data["message_id"]:
-                try:
-                    await send_debate_status(app, chat_id)
-                except:
-                    pass
-
-async def send_debate_status(app, chat_id):
-    speaker_emoji = "🟢" if debate_data["current_speaker"] == debate_data["speaker1"] else "🔵"
-    msg = f"━━━━━━━━━━━━━━━━━━\n"
-    msg += f"🎙️ مناظرة: {debate_data['title']}\n\n"
-    msg += f"👤 المتحدث الآن: {speaker_emoji} {debate_data['current_speaker']}\n"
-    minutes = debate_data["remaining_time"] // 60
-    seconds = debate_data["remaining_time"] % 60
-    msg += f"⏱️ الوقت المتبقي: {minutes:02d}:{seconds:02d}\n"
-    msg += f"⏳ الجولة: {debate_data['round']}\n"
-    if debate_data["over_time"] > 0:
-        ot_min = debate_data["over_time"] // 60
-        ot_sec = debate_data["over_time"] % 60
-        msg += f"🔴 تجاوز الوقت: +{ot_min:02d}:{ot_sec:02d}\n"
-    msg += "━━━━━━━━━━━━━━━━━━"
-    if debate_data["message_id"]:
-        await app.bot.edit_message_text(chat_id=chat_id, message_id=debate_data["message_id"],
-                                        text=msg, parse_mode=ParseMode.MARKDOWN)
-    else:
-        sent = await app.bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
-        debate_data["message_id"] = sent.message_id
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    if not message:
-        return
-    text = message.text.strip()
-    user_id = message.from_user.id
-
-    if not debate_data["active"] and any(word in text for word in trigger_words):
-        debate_data["initiator"] = user_id
-        debate_data["active"] = True
-        debate_data["turns_count"] = {}
-        await message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
-        return
-
-    if debate_data["active"] and user_id == debate_data["initiator"]:
-        if debate_data["title"] == "":
-            debate_data["title"] = text
-            await message.reply_text(f"تم تسجيل العنوان: {text}\nالآن أرسل اسم المحاور الأول:")
-            return
-        if debate_data["speaker1"] == "":
-            debate_data["speaker1"] = text
-            await message.reply_text(f"تم تسجيل المحاور الأول: {text}\nأرسل اسم المحاور الثاني:")
-            return
-        if debate_data["speaker2"] == "":
-            debate_data["speaker2"] = text
-            await message.reply_text(f"تم تسجيل المحاور الثاني: {text}\nأدخل الوقت لكل مداخلة (مثال: 3د):")
-            return
-        if debate_data["time_per_turn"] == 0:
-            try:
-                mins = int(text.replace("د", "").replace("دقيقة", "").strip())
-                debate_data["time_per_turn"] = mins * 60
-                await message.reply_text(f"تم تحديد الوقت: {mins} دقيقة.\nاكتب 'ابدأ الوقت' للبدء.")
-            except:
-                await message.reply_text("⚠️ أدخل الوقت بشكل صحيح (مثال: 3د)")
-            return
-        if text == "ابدأ الوقت":
-            debate_data["current_speaker"] = debate_data["speaker1"]
-            debate_data["remaining_time"] = debate_data["time_per_turn"]
-            debate_data["paused"] = False
-            await message.reply_text("⏳ تم بدء المناظرة!")
-            asyncio.create_task(timer_loop(context.application, GROUP_ID))
-            return
-
-flask_app = Flask(__name__)
-@flask_app.route("/")
+@app.route("/")
 def home():
-    return "Debate Bot is alive ✅"
+    return "Bot is running"
 
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+# =============================
+# المتغيرات العامة
+# =============================
+debate_data = {}
+timers = {}
+lock = threading.Lock()
 
+# =============================
+# أدوات مساعدة
+# =============================
+
+def format_time(seconds):
+    return str(timedelta(seconds=int(seconds)))
+
+def is_admin(user_id, admins):
+    return any(admin.user.id == user_id for admin in admins)
+
+async def send_debate_status(context: ContextTypes.DEFAULT_TYPE, chat_id):
+    data = debate_data[chat_id]
+    speaker = data["current_speaker"]
+    total = data["round"]
+    remain = max(0, data["remaining"])
+    elapsed = data["duration"] - remain
+
+    text = (
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🎙️ مناظرة: {data['title']}\n\n"
+        f"👤 المتحدث الآن: {speaker}\n"
+        f"⏱️ الوقت المتبقي: {format_time(remain)}\n"
+        f"⏳ الجولة: {total}\n"
+        "━━━━━━━━━━━━━━━━━━"
+    )
+    await context.bot.send_message(chat_id=chat_id, text=text)
+
+# =============================
+# التحكم في المؤقت
+# =============================
+def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
+    while True:
+        time.sleep(1)
+        with lock:
+            if chat_id not in debate_data or not debate_data[chat_id]["running"]:
+                break
+            data = debate_data[chat_id]
+            data["remaining"] -= 1
+            if data["remaining"] <= 0:
+                data["running"] = False
+                next_speaker = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+                context.application.create_task(context.bot.send_message(
+                    chat_id=chat_id,
+                    text=(f"🚨 انتهى وقت المحاور!\n👤 {data['current_speaker']} أكمل وقته المحدد "
+                          f"({data['duration']}ث)\n🔁 الدور ينتقل الآن إلى: {next_speaker}")
+                ))
+                data["current_speaker"] = next_speaker
+                data["remaining"] = data["duration"]
+                data["round"] += 1
+                break
+
+# =============================
+# معالجة الرسائل
+# =============================
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+    text = update.message.text.strip()
+
+    # التحقق من صلاحيات المشرفين
+    chat_admins = await context.bot.get_chat_administrators(chat_id)
+    if not is_admin(user.id, chat_admins):
+        return  # تجاهل الأعضاء العاديين تمامًا
+
+    # إنشاء مناظرة جديدة
+    if any(word in text for word in ["بوت المؤقت", "المؤقت", "بوت الساعة", "بوت الساعه", "الساعة", "الساعه"]):
+        debate_data[chat_id] = {
+            "admin": user.id,
+            "step": "title",
+            "title": "",
+            "speaker1": "",
+            "speaker2": "",
+            "duration": 0,
+            "remaining": 0,
+            "running": False,
+            "current_speaker": "",
+            "round": 1
+        }
+        await update.message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
+        return
+
+    if chat_id not in debate_data:
+        return  # لا توجد مناظرة نشطة
+
+    data = debate_data[chat_id]
+
+    # الخطوات الأولى لإدخال البيانات
+    if data["step"] == "title":
+        data["title"] = text
+        data["step"] = "speaker1"
+        await update.message.reply_text(f"تم تسجيل العنوان: {text}\nالآن أرسل اسم المحاور الأول:")
+        return
+
+    if data["step"] == "speaker1":
+        data["speaker1"] = text
+        data["step"] = "speaker2"
+        await update.message.reply_text(f"تم تسجيل المحاور الأول: {text}\nأرسل اسم المحاور الثاني:")
+        return
+
+    if data["step"] == "speaker2":
+        data["speaker2"] = text
+        data["step"] = "duration"
+        await update.message.reply_text(f"تم تسجيل المحاور الثاني: {text}\nأدخل الوقت لكل مداخلة (مثال: 5د):")
+        return
+
+    if data["step"] == "duration":
+        match = re.match(r"(\d+)\s*د", text)
+        if not match:
+            await update.message.reply_text("الرجاء إدخال الوقت بصيغة صحيحة مثل: 5د")
+            return
+        minutes = int(match.group(1))
+        data["duration"] = minutes * 60
+        data["remaining"] = data["duration"]
+        data["current_speaker"] = data["speaker1"]
+        data["step"] = "ready"
+        await update.message.reply_text(
+            f"🎙️ مناظرة: {data['title']}\n"
+            f"👤 المحاورون: 🟢 {data['speaker1']}, 🔵 {data['speaker2']}\n"
+            f"⏱️ الوقت لكل مداخلة: {minutes}د\n"
+            "اكتب 'ابدأ الوقت' للبدء."
+        )
+        return
+
+    # بدء الوقت
+    if text == "ابدأ الوقت" and data["step"] == "ready":
+        data["running"] = True
+        data["step"] = "running"
+        await update.message.reply_text("⏳ تم بدء المناظرة!")
+        thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+        thread.start()
+        timers[chat_id] = thread
+        return
+
+    # أوامر التحكم بعد البدء
+    if data["step"] == "running":
+        if text.startswith("تعديل"):
+            await update.message.reply_text("❌ لا يمكن تعديل البيانات بعد بدء العد.")
+            return
+        if text == "توقف":
+            data["running"] = False
+            await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
+            return
+        if text == "استئناف":
+            if data["running"]:
+                await update.message.reply_text("المؤقت يعمل بالفعل.")
+                return
+            data["running"] = True
+            thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+            thread.start()
+            timers[chat_id] = thread
+            await update.message.reply_text("▶️ تم استئناف المؤقت.")
+            return
+        if text == "تبديل":
+            data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+            data["remaining"] = data["duration"]
+            data["round"] += 1
+            await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
+            return
+        if text == "نهاية":
+            await update.message.reply_text("📊 تم إنهاء المناظرة.")
+            debate_data.pop(chat_id, None)
+            return
+
+# =============================
+# تشغيل البوت
+# =============================
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & filters.Chat(GROUP_ID), handle_message))
-    threading.Thread(target=run_flask).start()
-    app.run_polling(stop_signals=None)
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+
+    # Flask للحفاظ على التشغيل
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
+    application.run_polling()
