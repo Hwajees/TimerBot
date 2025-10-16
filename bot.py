@@ -52,7 +52,7 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: Non
 # تشغيل Webhook
 if __name__ == "__main__":
     app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
-    )
+    listen="0.0.0.0",
+    port=int(os.environ.get("PORT", 10000)),
+    webhook_url=f"{WEBHOOK_URL}",  # بدون /BOT_TOKEN
+)
