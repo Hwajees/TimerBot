@@ -5,12 +5,11 @@ from flask import Flask
 import threading
 
 # -----------------------------
-# إعدادات البوت الرسمي فقط
+# إعدادات البوت الرسمي
 # -----------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROUP_ID = int(os.environ.get("GROUP_ID"))
 
-# إنشاء بوت رسمي فقط
 bot = Client("debate-bot", bot_token=BOT_TOKEN)
 
 # -----------------------------
@@ -43,6 +42,7 @@ async def timer_loop(message):
             debate_data["remaining_time"] -= 1
         else:
             debate_data["over_time"] += 1
+
         # تحديث الحالة كل 10 ثوانٍ أو عند تجاوز الوقت
         if debate_data["remaining_time"] % 10 == 0 or debate_data["over_time"] > 0:
             await send_debate_status(message)
@@ -69,10 +69,8 @@ async def send_debate_status(message):
 # -----------------------------
 # استقبال رسائل المجموعة
 # -----------------------------
-@bot.on_message(filters.chat(GROUP_ID))
+@bot.on_message(filters.chat(GROUP_ID) & filters.text)
 async def handle_message(client, message):
-    if not message.text:
-        return
     text = message.text.strip()
     user_id = message.from_user.id
 
@@ -84,7 +82,7 @@ async def handle_message(client, message):
         await message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
         return
 
-    # إدخال البيانات الأولية
+    # إدخال البيانات الأولية من قبل المشرف الذي استدعى البوت
     if debate_data["active"] and user_id == debate_data["initiator"]:
         if debate_data["title"] == "":
             debate_data["title"] = text
