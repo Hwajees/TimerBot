@@ -1,58 +1,81 @@
 import os
+import asyncio
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
-# ------------------------------
-# المتغيرات
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://timerbot-fjtl.onrender.com")
-PORT = int(os.environ.get("PORT", 10000))
-GROUP_ID = int(os.environ.get("GROUP_ID", -1001234567890))  # ضع هنا معرف مجموعتك إذا أردت
+# ===== المتغيرات =====
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # ضع توكن البوت هنا أو في environment
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # إذا أردت webhooks
 
-admins = set()  # ستُخزن هنا قائمة المشرفين تلقائيًا
-# ------------------------------
+admins = set()  # لتخزين معرفات المشرفين
+timers = {}     # لتخزين بيانات الوقت لكل مستخدم/محادثة
 
-# --- دوال البوت ---
+# ===== دوال الأوامر =====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("أهلاً! البوت جاهز للعمل.")
 
+async def add_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("تم إضافة الوقت!")  # ضع منطقك هنا
+
+async def sub_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("تم نقص الوقت!")  # ضع منطقك هنا
+
+async def pause_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("تم إيقاف البوت مؤقتًا!")  # ضع منطقك هنا
+
+async def resume_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("تم استئناف البوت!")  # ضع منطقك هنا
+
+async def resign_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("تم التنازل عن المشرفية!")  # ضع منطقك هنا
+
+async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("جارٍ إعادة تشغيل البوت...")  # ضع منطقك هنا
+
+# ===== تحديث قائمة المشرفين تلقائيًا =====
 async def update_admins(bot):
     global admins
-    try:
-        members = await bot.get_chat_administrators(GROUP_ID)
-        admins = {admin.user.id for admin in members}
-        print(f"تم تحديث قائمة المشرفين: {admins}")
-    except Exception as e:
-        print(f"خطأ في تحديث المشرفين: {e}")
+    async for chat in bot.get_updates():
+        if chat.message and chat.message.chat.type in ["group", "supergroup"]:
+            chat_id = chat.message.chat.id
+            members = await bot.get_chat_administrators(chat_id)
+            admins.update([m.user.id for m in members])
+    print("تم تحديث قائمة المشرفين:", admins)
 
-async def post_init(app: Application):
+# ===== دوال المساعدة =====
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("الأمر غير معروف.")
+
+# ===== إعداد البوت =====
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # تسجيل الأوامر
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("addtime", add_time))
+    app.add_handler(CommandHandler("subtime", sub_time))
+    app.add_handler(CommandHandler("pause", pause_timer))
+    app.add_handler(CommandHandler("resume", resume_timer))
+    app.add_handler(CommandHandler("resign", resign_admin))
+    app.add_handler(CommandHandler("restart", restart_bot))
+
+    # أي أوامر غير معروفة
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+
+    # تحديث قائمة المشرفين عند بدء البوت
     await update_admins(app.bot)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("مرحبًا! البوت جاهز للعمل ✅")
+    # تشغيل البوت على polling داخل المحادثة الخاصة
+    await app.start()
+    await app.updater.start_polling()
+    print("البوت جاهز للعمل في المحادثة الخاصة.")
+    await asyncio.Event().wait()  # إبقاء البوت يعمل
 
-# مثال لأمر عام
-async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Pong!")
-
-# --- هنا ضع باقي أوامر البوت: تعديل، توقف، استئناف، إضافة/حذف وقت، إعادة البوت ---
-# يمكنك إنشاء دوال async لكل أمر، والتحقق من كون المستخدم ضمن admins قبل تنفيذ أي إجراء
-
-# ------------------------------
-# إعداد التطبيق
-app = Application.builder().token(BOT_TOKEN).build()
-app.post_init = post_init
-
-# --- تسجيل الأوامر ---
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("ping", ping))
-
-# --- لتسجيل رسائل نصية عامة ---
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None))
-
-# ------------------------------
-# تشغيل Webhook
 if __name__ == "__main__":
-    app.run_webhook(
-    listen="0.0.0.0",
-    port=int(os.environ.get("PORT", 10000)),
-    webhook_url=f"{WEBHOOK_URL}",  # بدون /BOT_TOKEN
-)
+    asyncio.run(main())
