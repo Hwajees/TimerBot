@@ -6,7 +6,7 @@ from flask import Flask
 import threading
 
 # -----------------------------
-# إعدادات البوت
+# إعدادات البوت الرسمي
 # -----------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROUP_ID = int(os.environ.get("GROUP_ID"))
@@ -36,7 +36,7 @@ trigger_words = ["بوت المؤقت","المؤقت","بوت الساعة","ب�
 # -----------------------------
 # عداد الوقت
 # -----------------------------
-async def timer_loop(chat_id: int, message: Message):
+async def timer_loop(message: Message):
     while debate_data["active"] and not debate_data["paused"]:
         await asyncio.sleep(1)
         if debate_data["remaining_time"] > 0:
@@ -72,25 +72,18 @@ async def handle_message(client: Client, message: Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
-    # =====================
-    # Debug: طباعة كل رسالة مستلمة
-    # =====================
-    print(f"[DEBUG] Received message in group {message.chat.id} from user {user_id}: {text}")
+    # Debug
+    print(f"[DEBUG] Received message: {text} from {user_id}")
 
-    # =====================
     # استدعاء البوت
-    # =====================
     if not debate_data["active"] and any(word in text for word in trigger_words):
-        print(f"[DEBUG] Bot trigger detected by user {user_id}")
         debate_data["initiator"] = user_id
         debate_data["active"] = True
         debate_data["turns_count"] = {}
         await message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
         return
 
-    # =====================
     # إدخال البيانات الأولية
-    # =====================
     if debate_data["active"] and user_id == debate_data["initiator"]:
         # تعديل العنوان
         if debate_data["title"] == "":
@@ -139,12 +132,10 @@ async def handle_message(client: Client, message: Message):
             debate_data["paused"] = False
             await message.reply_text("تم بدء المناظرة!")
             await send_debate_status(message)
-            asyncio.create_task(timer_loop(message.chat.id, message))
+            asyncio.create_task(timer_loop(message))
             return
 
-    # =====================
     # أوامر بعد بدء المناظرة
-    # =====================
     if debate_data["current_speaker"] != "":
         # تبديل المتحدث
         if text == "تبديل":
@@ -159,21 +150,21 @@ async def handle_message(client: Client, message: Message):
         # إيقاف مؤقت
         if text == "توقف":
             debate_data["paused"] = True
-            await message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت الحالي: {debate_data['remaining_time']//60:02d}:{debate_data['remaining_time']%60:02d}\n⏳ المتبقي: {debate_data['time_per_turn']//60:02d}:{debate_data['time_per_turn']%60:02d}")
+            await message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت الحالي: {debate_data['remaining_time']//60:02d}:{debate_data['remaining_time']%60:02d}")
             return
 
         # استئناف
         if text == "استئناف":
             debate_data["paused"] = False
-            asyncio.create_task(timer_loop(message.chat.id, message))
-            await message.reply_text(f"▶️ تم استئناف المؤقت.\n⏱️ الوقت الحالي: {debate_data['remaining_time']//60:02d}:{debate_data['remaining_time']%60:02d}\n⏳ المتبقي: {debate_data['time_per_turn']//60:02d}:{debate_data['time_per_turn']%60:02d}\nالمتحدث الآن: {debate_data['current_speaker']}")
+            asyncio.create_task(timer_loop(message))
+            await message.reply_text(f"▶️ تم استئناف المؤقت.\nالمتحدث الآن: {debate_data['current_speaker']}")
             return
 
         # إعادة وقت المداخلة
         if text == "اعادة":
             debate_data["remaining_time"] = debate_data["time_per_turn"]
             debate_data["over_time"] = 0
-            await message.reply_text(f"🔄 تم إعادة وقت المداخلة من البداية.\nالمتحدث الآن: {debate_data['current_speaker']}\nالوقت المحدد: {debate_data['time_per_turn']//60}د")
+            await message.reply_text(f"🔄 تم إعادة وقت المداخلة من البداية.\nالمتحدث الآن: {debate_data['current_speaker']}")
             return
 
         # إضافة أو إنقاص الوقت
@@ -205,17 +196,34 @@ async def handle_message(client: Client, message: Message):
             msg = f"📊 نتائج المناظرة: {debate_data['title']}\n\n"
             for speaker in [debate_data["speaker1"], debate_data["speaker2"]]:
                 turns = debate_data["turns_count"].get(speaker,0)
-                used_time = (turns * debate_data["time_per_turn"] + (debate_data["time_per_turn"] - debate_data["remaining_time"]))//1
+                used_time = (turns * debate_data["time_per_turn"] + (debate_data["time_per_turn"] - debate_data["remaining_time"]))
                 minutes = int(used_time // 60)
                 seconds = int(used_time % 60)
                 msg += f"{'🟢' if speaker == debate_data['speaker1'] else '🔵'} {speaker}\n"
                 msg += f"🗣️ عدد المداخلات: {turns}\n"
                 msg += f"⏱️ الوقت المستخدم: {minutes:02d}:{seconds:02d} دقيقة\n\n"
-            total_time = sum([turns*debate_data["time_per_turn"] for turns in debate_data["turns_count"].values()])//1
+            total_time = sum([turns*debate_data["time_per_turn"] for turns in debate_data["turns_count"].values()])
             msg += f"🕒 الوقت الكلي: {int(total_time//60):02d}:{int(total_time%60):02d} دقيقة\n━━━━━━━━━━━━━━━━━━"
             await message.reply_text(msg)
             # إعادة الحالة للانتظار
-            debate_data = {key: None if isinstance(val, str) else False if isinstance(val,bool) else 0 for key,val in debate_data.items()}
+            debate_data = {
+                "active":
+            # إعادة الحالة للانتظار بعد انتهاء المناظرة
+            debate_data = {
+                "active": False,
+                "initiator": None,
+                "title": "",
+                "speaker1": "",
+                "speaker2": "",
+                "time_per_turn": 0,
+                "current_speaker": "",
+                "remaining_time": 0,
+                "round": 1,
+                "turns_count": {},
+                "over_time": 0,
+                "paused": False
+            }
+            await message.reply_text("✅ تم إنهاء المناظرة. البوت جاهز للمناظرة التالية.")
             return
 
 # -----------------------------
