@@ -1,9 +1,12 @@
 import os
 import asyncio
-from pyrogram import Client, filters, idle
+from pyrogram import Client, filters
 from flask import Flask
 import threading
 
+# -----------------------------
+# إعدادات البوت
+# -----------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROUP_ID = int(os.environ.get("GROUP_ID"))
 
@@ -32,13 +35,16 @@ trigger_words = ["بوت المؤقت","المؤقت","بوت الساعة","ب�
 # -----------------------------
 # عداد الوقت
 # -----------------------------
-async def timer_loop():
+async def timer_loop(message):
     while debate_data["active"] and not debate_data["paused"]:
         await asyncio.sleep(1)
         if debate_data["remaining_time"] > 0:
             debate_data["remaining_time"] -= 1
         else:
             debate_data["over_time"] += 1
+        # تحديث الحالة كل دقيقة أو عند تجاوز الوقت
+        if debate_data["remaining_time"] % 10 == 0 or debate_data["over_time"] > 0:
+            await send_debate_status(message)
 
 # -----------------------------
 # إرسال حالة المناظرة
@@ -62,8 +68,10 @@ async def send_debate_status(message):
 # -----------------------------
 # استقبال رسائل المجموعة
 # -----------------------------
-@bot.on_message(filters.chat(GROUP_ID) & filters.text)
+@bot.on_message(filters.chat(GROUP_ID))
 async def handle_message(client, message):
+    if not message.text:
+        return
     text = message.text.strip()
     user_id = message.from_user.id
 
@@ -105,7 +113,7 @@ async def handle_message(client, message):
             debate_data["paused"] = False
             await message.reply_text("تم بدء المناظرة!")
             await send_debate_status(message)
-            asyncio.create_task(timer_loop())
+            asyncio.create_task(timer_loop(message))
             return
 
 # -----------------------------
@@ -124,4 +132,4 @@ def run_flask():
 # -----------------------------
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
-    bot.run()  # البوت الرسمي فقط
+    bot.run()
