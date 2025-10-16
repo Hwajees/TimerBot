@@ -64,16 +64,13 @@ async def send_debate_status(message: Message):
     await message.reply_text(msg)
 
 # -----------------------------
-# استقبال الرسائل
+# استقبال الرسائل في المجموعة
 # -----------------------------
 @app.on_message(filters.chat(GROUP_ID) & filters.text)
 async def handle_message(client: Client, message: Message):
     global debate_data
     text = message.text.strip()
     user_id = message.from_user.id
-
-    # Debug
-    print(f"[DEBUG] Received message: {text} from {user_id}")
 
     # استدعاء البوت
     if not debate_data["active"] and any(word in text for word in trigger_words):
@@ -85,43 +82,29 @@ async def handle_message(client: Client, message: Message):
 
     # إدخال البيانات الأولية
     if debate_data["active"] and user_id == debate_data["initiator"]:
-        # تعديل العنوان
+        # إدخال أو تعديل العنوان
         if debate_data["title"] == "":
-            if text.lower().startswith("تعديل العنوان:"):
-                debate_data["title"] = text.split(":",1)[1].strip()
-                await message.reply_text(f"تم تعديل العنوان: {debate_data['title']}")
-            else:
-                debate_data["title"] = text
-                await message.reply_text(f"تم تسجيل عنوان المناظرة: {debate_data['title']}\nالآن أدخل اسم المحاور الأول:")
+            debate_data["title"] = text
+            await message.reply_text(f"تم تسجيل عنوان المناظرة: {debate_data['title']}\nالآن أدخل اسم المحاور الأول:")
             return
         # المحاور الأول
         if debate_data["speaker1"] == "":
-            if text.lower().startswith("تعديل محاور1:"):
-                debate_data["speaker1"] = text.split(":",1)[1].strip()
-                await message.reply_text(f"تم تعديل اسم المحاور الأول: {debate_data['speaker1']}")
-            else:
-                debate_data["speaker1"] = text
-                await message.reply_text(f"تم تسجيل المحاور الأول: {debate_data['speaker1']}\nالآن أدخل اسم المحاور الثاني:")
+            debate_data["speaker1"] = text
+            await message.reply_text(f"تم تسجيل المحاور الأول: {debate_data['speaker1']}\nالآن أدخل اسم المحاور الثاني:")
             return
         # المحاور الثاني
         if debate_data["speaker2"] == "":
-            if text.lower().startswith("تعديل محاور2:"):
-                debate_data["speaker2"] = text.split(":",1)[1].strip()
-                await message.reply_text(f"تم تعديل اسم المحاور الثاني: {debate_data['speaker2']}")
-            else:
-                debate_data["speaker2"] = text
-                await message.reply_text(f"تم تسجيل المحاور الثاني: {debate_data['speaker2']}\nالآن أدخل الوقت لكل مداخلة بالدقائق:")
+            debate_data["speaker2"] = text
+            await message.reply_text(f"تم تسجيل المحاور الثاني: {debate_data['speaker2']}\nالآن أدخل الوقت لكل مداخلة بالدقائق:")
             return
-        # الوقت
+        # الوقت لكل مداخلة
         if debate_data["time_per_turn"] == 0:
-            if text.lower().startswith("تعديل الوقت:"):
-                mins = int(text.split(":",1)[1].replace("د","").strip())
-                debate_data["time_per_turn"] = mins * 60
-                await message.reply_text(f"تم تعديل الوقت لكل مداخلة: {mins} دقائق\nاكتب 'ابدأ الوقت' لبدء المناظرة.")
-            else:
-                mins = int(text.replace("د","").strip())
+            try:
+                mins = int(text.replace("د",""))
                 debate_data["time_per_turn"] = mins * 60
                 await message.reply_text(f"تم تسجيل الوقت لكل مداخلة: {mins} دقائق\nاكتب 'ابدأ الوقت' لبدء المناظرة.")
+            except:
+                await message.reply_text("⚠️ يرجى إدخال الوقت بشكل صحيح (مثال: 3د)")
             return
         # بدء المناظرة
         if text == "ابدأ الوقت":
@@ -191,7 +174,7 @@ async def handle_message(client: Client, message: Message):
                 await message.reply_text("⚠️ صيغة غير صحيحة! استخدم مثل: اضف ٣٠ث أو انقص ٢د")
             return
 
-               # نهاية المناظرة
+        # نهاية المناظرة
         if text == "نهاية":
             msg = f"📊 نتائج المناظرة: {debate_data['title']}\n\n"
             for speaker in [debate_data["speaker1"], debate_data["speaker2"]]:
