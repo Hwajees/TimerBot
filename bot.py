@@ -191,7 +191,7 @@ async def handle_message(client: Client, message: Message):
                 await message.reply_text("⚠️ صيغة غير صحيحة! استخدم مثل: اضف ٣٠ث أو انقص ٢د")
             return
 
-        # نهاية المناظرة
+               # نهاية المناظرة
         if text == "نهاية":
             msg = f"📊 نتائج المناظرة: {debate_data['title']}\n\n"
             for speaker in [debate_data["speaker1"], debate_data["speaker2"]]:
@@ -205,9 +205,7 @@ async def handle_message(client: Client, message: Message):
             total_time = sum([turns*debate_data["time_per_turn"] for turns in debate_data["turns_count"].values()])
             msg += f"🕒 الوقت الكلي: {int(total_time//60):02d}:{int(total_time%60):02d} دقيقة\n━━━━━━━━━━━━━━━━━━"
             await message.reply_text(msg)
-            # إعادة الحالة للانتظار
-            debate_data = {
-                "active":
+
             # إعادة الحالة للانتظار بعد انتهاء المناظرة
             debate_data = {
                 "active": False,
@@ -225,7 +223,6 @@ async def handle_message(client: Client, message: Message):
             }
             await message.reply_text("✅ تم إنهاء المناظرة. البوت جاهز للمناظرة التالية.")
             return
-
 
 # -----------------------------
 # Flask لإبقاء Render مستيقظ
