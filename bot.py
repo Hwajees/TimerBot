@@ -226,6 +226,7 @@ async def handle_message(client: Client, message: Message):
             await message.reply_text("✅ تم إنهاء المناظرة. البوت جاهز للمناظرة التالية.")
             return
 
+
 # -----------------------------
 # Flask لإبقاء Render مستيقظ
 # -----------------------------
