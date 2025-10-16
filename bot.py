@@ -1,102 +1,108 @@
 import os
+import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+# ----------------------
+# إعداد اللوج
+# ----------------------
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ----------------------
+# المتغيرات البيئية
+# ----------------------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 GROUP_ID = int(os.environ["GROUP_ID"])
 WEBHOOK_URL = os.environ["WEBHOOK_URL"]
-PORT = int(os.environ.get("PORT", 10000))
 
-# ===== البيانات =====
-is_paused = False
-time_left = 0
+# ----------------------
+# قائمة المشرفين (ستتحدث تلقائيًا)
+# ----------------------
 admins = set()
 
-# ===== الأدوات =====
-async def register_admins(context: ContextTypes.DEFAULT_TYPE):
-    chat_admins = await context.bot.get_chat_administrators(GROUP_ID)
-    for admin in chat_admins:
-        admins.add(admin.user.id)
+async def update_admins(app: Application):
+    """تحديث قائمة المشرفين تلقائيًا"""
+    global admins
+    chat_admins = await app.bot.get_chat_administrators(GROUP_ID)
+    admins = {admin.user.id for admin in chat_admins}
 
-def is_admin(user_id):
-    return user_id in admins
-
-# ===== الأوامر =====
+# ----------------------
+# أوامر البوت
+# ----------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.id != GROUP_ID:
-        return
-    await register_admins(context)  # تسجيل المشرفين تلقائياً عند أول أمر
-    await update.message.reply_text("بوت المناظرة جاهز! ✅")
+    await update.message.reply_text("بوت الوقت فعال ✅")
 
-async def pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_paused
-    if update.effective_chat.id != GROUP_ID or not is_admin(update.effective_user.id):
-        return
-    is_paused = True
-    await update.message.reply_text("تم إيقاف المناظرة مؤقتًا ⏸️")
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id in admins:
+        await update.message.reply_text("تم التوقف مؤقتًا ⏸️")
+        # هنا ضع الكود الخاص بالتوقف
+    else:
+        await update.message.reply_text("أنت لست مشرفًا ❌")
 
 async def resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_paused
-    if update.effective_chat.id != GROUP_ID or not is_admin(update.effective_user.id):
-        return
-    is_paused = False
-    await update.message.reply_text("تم استئناف المناظرة ▶️")
+    if update.effective_user.id in admins:
+        await update.message.reply_text("تم الاستئناف ▶️")
+        # هنا ضع الكود الخاص بالاستئناف
+    else:
+        await update.message.reply_text("أنت لست مشرفًا ❌")
 
 async def add_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global time_left
-    if update.effective_chat.id != GROUP_ID or not is_admin(update.effective_user.id):
-        return
-    try:
-        amount = int(context.args[0])
-        time_left += amount
-        await update.message.reply_text(f"تم إضافة {amount} ثانية ⏱️")
-    except:
-        await update.message.reply_text("استخدم: /add_time <عدد_الثواني>")
+    if update.effective_user.id in admins:
+        await update.message.reply_text("تم إضافة الوقت ⏱️")
+        # هنا ضع الكود الخاص بالإضافة
+    else:
+        await update.message.reply_text("أنت لست مشرفًا ❌")
 
 async def remove_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global time_left
-    if update.effective_chat.id != GROUP_ID or not is_admin(update.effective_user.id):
-        return
-    try:
-        amount = int(context.args[0])
-        time_left -= amount
-        await update.message.reply_text(f"تم إنقاص {amount} ثانية ⏱️")
-    except:
-        await update.message.reply_text("استخدم: /remove_time <عدد_الثواني>")
+    if update.effective_user.id in admins:
+        await update.message.reply_text("تم إنقاص الوقت ⏱️")
+        # هنا ضع الكود الخاص بالنقصان
+    else:
+        await update.message.reply_text("أنت لست مشرفًا ❌")
+
+async def relinquish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id in admins:
+        await update.message.reply_text("تم التنازل ⚡")
+        # هنا ضع الكود الخاص بالتنازل
+    else:
+        await update.message.reply_text("أنت لست مشرفًا ❌")
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global time_left, is_paused
-    if update.effective_chat.id != GROUP_ID or not is_admin(update.effective_user.id):
-        return
-    time_left = 0
-    is_paused = False
-    await update.message.reply_text("تم إعادة المناظرة 🔄")
+    if update.effective_user.id in admins:
+        await update.message.reply_text("تم إعادة ضبط البوت 🔄")
+        # هنا ضع الكود الخاص بإعادة البوت
+    else:
+        await update.message.reply_text("أنت لست مشرفًا ❌")
 
-async def concede(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.id != GROUP_ID:
-        return
-    await update.message.reply_text(f"{update.effective_user.full_name} تنازل عن دوره 🏳️")
+# ----------------------
+# تشغيل البوت على Webhook
+# ----------------------
+async def main():
+    app = Application.builder().token(BOT_TOKEN).build()
 
-async def edit_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.id != GROUP_ID or not is_admin(update.effective_user.id):
-        return
-    await update.message.reply_text("تم تعديل النص 🔧")
+    # تحديث المشرفين تلقائيًا
+    await update_admins(app)
 
-# ===== التطبيق =====
-app = Application.builder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("pause", pause))
-app.add_handler(CommandHandler("resume", resume))
-app.add_handler(CommandHandler("add_time", add_time))
-app.add_handler(CommandHandler("remove_time", remove_time))
-app.add_handler(CommandHandler("reset", reset))
-app.add_handler(CommandHandler("concede", concede))
-app.add_handler(CommandHandler("edit_text", edit_text))
+    # إضافة Handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CommandHandler("resume", resume))
+    app.add_handler(CommandHandler("addtime", add_time))
+    app.add_handler(CommandHandler("removetime", remove_time))
+    app.add_handler(CommandHandler("relinquish", relinquish))
+    app.add_handler(CommandHandler("reset", reset))
 
-# ===== تشغيل Webhook =====
-if __name__ == "__main__":
-    app.run_webhook(
+    # تشغيل الـ webhook
+    await app.run_webhook(
         listen="0.0.0.0",
-        port=PORT,
+        port=int(os.environ.get("PORT", 10000)),
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
     )
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
