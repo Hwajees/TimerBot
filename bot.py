@@ -1,44 +1,48 @@
 import os
 import asyncio
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, Bot, ChatMember
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# المتغيرات البيئية
-BOT_TOKEN = os.environ['BOT_TOKEN']
-WEBHOOK_URL = os.environ['WEBHOOK_URL']
-GROUP_ID = int(os.environ['GROUP_ID'])
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+WEBHOOK_URL = os.environ["WEBHOOK_URL"]
 
-admins = set()  # قائمة المشرفين ستُحدث تلقائيًا
+# تخزين المشرفين
+admins = set()
 
-# ------------------ تحديث المشرفين تلقائيًا ------------------
-async def update_admins(app: Application):
+# تحديث قائمة المشرفين تلقائيًا
+async def update_admins(bot):
     global admins
-    chat_admins = await app.bot.get_chat_administrators(GROUP_ID)
-    admins = {admin.user.id for admin in chat_admins}
-    print("Current admins:", admins)
+    try:
+        chat_id = int(os.environ.get("GROUP_ID", 0))
+        members = await bot.get_chat_administrators(chat_id)
+        admins = {admin.user.id for admin in members}
+        print(f"تم تحديث قائمة المشرفين: {admins}")
+    except Exception as e:
+        print(f"خطأ في تحديث المشرفين: {e}")
 
-# ------------------ أوامر البوت ------------------
+# مثال على أمر البوت
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("بوت التايمر شغال ✅")
+    await update.message.reply_text("مرحبا! البوت يعمل الآن.")
 
-# هنا ضع الكود الخاص بإضافة/حذف/تعديل الوقت، التوقف، الاستئناف، التنازل، إعادة البوت
-# مثال:
-# async def stop_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     ...
+# مثال على أمر خاص بالمشرفين
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id in admins:
+        await update.message.reply_text("أنت مشرف، تم تنفيذ الأمر.")
+    else:
+        await update.message.reply_text("أنت لست مشرفاً.")
 
-# ------------------ تشغيل البوت ------------------
 async def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # تسجيل الأوامر
+    # تحديث المشرفين عند بدء التشغيل
+    await update_admins(app.bot)
+
+    # إضافة الأوامر
     app.add_handler(CommandHandler("start", start))
-    
-    # تحديث المشرفين عند الإقلاع
-    async def on_startup(app):
-        await update_admins(app)
-    app.post_init = on_startup
+    app.add_handler(CommandHandler("admincmd", admin_command))
 
-    # تشغيل Webhook
+    # تشغيل البوت على الويب هوك
     await app.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 10000)),
