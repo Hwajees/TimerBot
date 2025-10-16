@@ -5,11 +5,14 @@ from flask import Flask
 import threading
 
 # -----------------------------
-# إعدادات البوت الرسمي
+# المتغيرات من Render
 # -----------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROUP_ID = int(os.environ.get("GROUP_ID"))
 
+# -----------------------------
+# إنشاء البوت الرسمي
+# -----------------------------
 bot = Client("debate-bot", bot_token=BOT_TOKEN)
 
 # -----------------------------
@@ -36,21 +39,24 @@ trigger_words = ["بوت المؤقت","المؤقت","بوت الساعة","ب�
 # عداد الوقت
 # -----------------------------
 async def timer_loop(message):
-    while debate_data["active"] and not debate_data["paused"]:
+    while debate_data["active"]:
         await asyncio.sleep(1)
+        if debate_data["paused"]:
+            continue
         if debate_data["remaining_time"] > 0:
             debate_data["remaining_time"] -= 1
         else:
             debate_data["over_time"] += 1
-
-        # تحديث الحالة كل 10 ثوانٍ أو عند تجاوز الوقت
-        if debate_data["remaining_time"] % 10 == 0 or debate_data["over_time"] > 0:
+        # تحديث رسالة كل دقيقة أو عند انتهاء الوقت
+        if debate_data["remaining_time"] % 10 == 0 or debate_data["remaining_time"] == 0:
             await send_debate_status(message)
 
 # -----------------------------
 # إرسال حالة المناظرة
 # -----------------------------
 async def send_debate_status(message):
+    if not debate_data["active"]:
+        return
     speaker_emoji = "🟢" if debate_data["current_speaker"] == debate_data["speaker1"] else "🔵"
     msg = f"━━━━━━━━━━━━━━━━━━\n"
     msg += f"🎙️ مناظرة: {debate_data['title']}\n\n"
@@ -82,7 +88,7 @@ async def handle_message(client, message):
         await message.reply_text("تم استدعاء البوت! من فضلك أدخل عنوان المناظرة:")
         return
 
-    # إدخال البيانات الأولية من قبل المشرف الذي استدعى البوت
+    # إدخال البيانات الأولية فقط للمشرف الذي استدعى البوت
     if debate_data["active"] and user_id == debate_data["initiator"]:
         if debate_data["title"] == "":
             debate_data["title"] = text
@@ -104,6 +110,8 @@ async def handle_message(client, message):
             except:
                 await message.reply_text("⚠️ يرجى إدخال الوقت بشكل صحيح (مثال: 3د)")
             return
+
+        # بدء العد
         if text == "ابدأ الوقت":
             debate_data["current_speaker"] = debate_data["speaker1"]
             debate_data["remaining_time"] = debate_data["time_per_turn"]
