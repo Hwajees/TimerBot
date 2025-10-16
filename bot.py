@@ -82,22 +82,18 @@ async def handle_message(client: Client, message: Message):
 
     # إدخال البيانات الأولية
     if debate_data["active"] and user_id == debate_data["initiator"]:
-        # إدخال أو تعديل العنوان
         if debate_data["title"] == "":
             debate_data["title"] = text
             await message.reply_text(f"تم تسجيل عنوان المناظرة: {debate_data['title']}\nالآن أدخل اسم المحاور الأول:")
             return
-        # المحاور الأول
         if debate_data["speaker1"] == "":
             debate_data["speaker1"] = text
             await message.reply_text(f"تم تسجيل المحاور الأول: {debate_data['speaker1']}\nالآن أدخل اسم المحاور الثاني:")
             return
-        # المحاور الثاني
         if debate_data["speaker2"] == "":
             debate_data["speaker2"] = text
             await message.reply_text(f"تم تسجيل المحاور الثاني: {debate_data['speaker2']}\nالآن أدخل الوقت لكل مداخلة بالدقائق:")
             return
-        # الوقت لكل مداخلة
         if debate_data["time_per_turn"] == 0:
             try:
                 mins = int(text.replace("د",""))
@@ -106,7 +102,6 @@ async def handle_message(client: Client, message: Message):
             except:
                 await message.reply_text("⚠️ يرجى إدخال الوقت بشكل صحيح (مثال: 3د)")
             return
-        # بدء المناظرة
         if text == "ابدأ الوقت":
             debate_data["current_speaker"] = debate_data["speaker1"]
             debate_data["remaining_time"] = debate_data["time_per_turn"]
@@ -120,7 +115,6 @@ async def handle_message(client: Client, message: Message):
 
     # أوامر بعد بدء المناظرة
     if debate_data["current_speaker"] != "":
-        # تبديل المتحدث
         if text == "تبديل":
             debate_data["round"] += 1
             debate_data["over_time"] = 0
@@ -129,28 +123,20 @@ async def handle_message(client: Client, message: Message):
             debate_data["remaining_time"] = debate_data["time_per_turn"]
             await send_debate_status(message)
             return
-
-        # إيقاف مؤقت
         if text == "توقف":
             debate_data["paused"] = True
             await message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت الحالي: {debate_data['remaining_time']//60:02d}:{debate_data['remaining_time']%60:02d}")
             return
-
-        # استئناف
         if text == "استئناف":
             debate_data["paused"] = False
             asyncio.create_task(timer_loop(message))
             await message.reply_text(f"▶️ تم استئناف المؤقت.\nالمتحدث الآن: {debate_data['current_speaker']}")
             return
-
-        # إعادة وقت المداخلة
         if text == "اعادة":
             debate_data["remaining_time"] = debate_data["time_per_turn"]
             debate_data["over_time"] = 0
             await message.reply_text(f"🔄 تم إعادة وقت المداخلة من البداية.\nالمتحدث الآن: {debate_data['current_speaker']}")
             return
-
-        # إضافة أو إنقاص الوقت
         if text.startswith("اضف") or text.startswith("انقص"):
             action = "اضف" if text.startswith("اضف") else "انقص"
             try:
@@ -173,8 +159,6 @@ async def handle_message(client: Client, message: Message):
             except:
                 await message.reply_text("⚠️ صيغة غير صحيحة! استخدم مثل: اضف ٣٠ث أو انقص ٢د")
             return
-
-        # نهاية المناظرة
         if text == "نهاية":
             msg = f"📊 نتائج المناظرة: {debate_data['title']}\n\n"
             for speaker in [debate_data["speaker1"], debate_data["speaker2"]]:
@@ -188,8 +172,6 @@ async def handle_message(client: Client, message: Message):
             total_time = sum([turns*debate_data["time_per_turn"] for turns in debate_data["turns_count"].values()])
             msg += f"🕒 الوقت الكلي: {int(total_time//60):02d}:{int(total_time%60):02d} دقيقة\n━━━━━━━━━━━━━━━━━━"
             await message.reply_text(msg)
-
-            # إعادة الحالة للانتظار بعد انتهاء المناظرة
             debate_data = {
                 "active": False,
                 "initiator": None,
@@ -225,4 +207,6 @@ def run_flask():
 # -----------------------------
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
-    app.run()
+    app.start()
+    print("Bot started...")
+    app.idle()
