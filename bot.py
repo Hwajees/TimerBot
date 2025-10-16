@@ -5,11 +5,12 @@ from flask import Flask
 import threading
 
 # -----------------------------
-# إعدادات البوت
+# إعدادات البوت الرسمي فقط
 # -----------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROUP_ID = int(os.environ.get("GROUP_ID"))
 
+# إنشاء بوت رسمي فقط
 bot = Client("debate-bot", bot_token=BOT_TOKEN)
 
 # -----------------------------
@@ -42,7 +43,7 @@ async def timer_loop(message):
             debate_data["remaining_time"] -= 1
         else:
             debate_data["over_time"] += 1
-        # تحديث الحالة كل دقيقة أو عند تجاوز الوقت
+        # تحديث الحالة كل 10 ثوانٍ أو عند تجاوز الوقت
         if debate_data["remaining_time"] % 10 == 0 or debate_data["over_time"] > 0:
             await send_debate_status(message)
 
@@ -132,4 +133,4 @@ def run_flask():
 # -----------------------------
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
-    bot.run()
+    bot.run()  # بوت رسمي فقط
