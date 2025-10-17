@@ -53,6 +53,9 @@ async def send_debate_status(context: ContextTypes.DEFAULT_TYPE, chat_id):
 # التحكم في المؤقت
 # =============================
 def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     async def send_message_safe(text):
         try:
             await context.bot.send_message(chat_id=chat_id, text=text)
@@ -74,30 +77,31 @@ def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
             # تنبيه قبل انتهاء الوقت (آخر 30 ثانية، كل 10 ثواني)
             if 0 < data["remaining"] <= 30 and data["remaining"] % 10 == 0 and data["remaining"] != last_alert:
                 last_alert = data["remaining"]
-                asyncio.run_coroutine_threadsafe(
-                    send_message_safe(f"⏳ انتبه! {data['current_speaker']} تبقى {format_time(data['remaining'])} على انتهاء المداخلة!"),
-                    asyncio.get_event_loop()
-                )
+                loop.create_task(send_message_safe(
+                    f"⏳ انتبه! {data['current_speaker']} تبقى {format_time(data['remaining'])} على انتهاء المداخلة!"
+                ))
 
             # انتهاء الوقت
             if data["remaining"] <= 0:
                 data["running"] = False
-                asyncio.run_coroutine_threadsafe(
-                    send_message_safe(f"🚨 انتهى وقت {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."),
-                    asyncio.get_event_loop()
-                )
+                loop.create_task(send_message_safe(
+                    f"🚨 انتهى وقت {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."
+                ))
 
         # حساب الوقت الزائد كل 10 ثواني حتى التبديل
         while not data["running"] and chat_id in debate_data:
             time.sleep(10)
             extra_seconds += 10
-            asyncio.run_coroutine_threadsafe(
-                send_message_safe(f"⌛ الوقت الزائد للمتحدث الحالي {data['current_speaker']}: {format_time(extra_seconds)}"),
-                asyncio.get_event_loop()
-            )
+            loop.create_task(send_message_safe(
+                f"⌛ الوقت الزائد للمتحدث الحالي {data['current_speaker']}: {format_time(extra_seconds)}"
+            ))
             with lock:
                 if data["running"]:
                     break
+
+    # تشغيل المهام المعلقة
+    loop.run_until_complete(asyncio.sleep(0))
+    loop.close()
 
 # =============================
 # معالجة الرسائل
