@@ -92,9 +92,8 @@ def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
 # معالجة الرسائل
 # =============================
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # تجاهل أي تحديث بدون نص
-    if not update.message or not update.message.text:
-        return
+    if update.message is None or update.message.text is None:
+        return  # تجاهل الرسائل غير النصية
 
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -105,7 +104,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(user.id, chat_admins):
         return
 
-    # ==================== إنشاء مناظرة جديدة ====================
+    # إنشاء مناظرة جديدة
     if any(word in text for word in ["بوت المؤقت", "المؤقت", "بوت الساعة", "بوت الساعه", "الساعة", "الساعه"]):
         debate_data[chat_id] = {
             "admin": user.id,
@@ -120,7 +119,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "round": 1
         }
         await update.message.reply_text(
-            "تم استدعاء البوت! أرسل بيانات المناظرة بالترتيب مفصولة بسطر لكل واحد:\n"
+            "تم استدعاء البوت! أرسل بيانات المناظرة بالترتيب، كل واحد بسطر:\n"
             "1. عنوان المناظرة\n2. المحاور الأول\n3. المحاور الثاني\n4. الوقت (مثال: 5د)"
         )
         return
@@ -163,8 +162,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ==================== باقي الأوامر بعد بدء الوقت ====================
     text_conv = convert_arabic_numbers(text)
 
-    # بدء المؤقت
-    if data["step"] == "ready" and text == "ابدأ الوقت":
+    # بدء الوقت
+    if text == "ابدأ الوقت" and data["step"] == "ready":
         data["running"] = True
         data["step"] = "running"
         await update.message.reply_text("⏳ تم بدء المناظرة!")
@@ -173,7 +172,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         timers[chat_id] = thread
         return
 
-    # أوامر بعد بدء المناظرة
     if data["step"] == "running":
         if text == "توقف":
             data["running"] = False
@@ -206,8 +204,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # أوامر التحكم بالوقت بعد البداية
         if text_conv == "تنازل":
             next_speaker = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
-            await context.bot.send_message(
-                chat_id=chat_id,
+            await context.bot.send_message(chat_id=chat_id,
                 text=f"🚨 تنازل {data['current_speaker']} عن المداخلة!\n🔁 الدور ينتقل الآن إلى: {next_speaker}"
             )
             data["current_speaker"] = next_speaker
