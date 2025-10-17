@@ -43,7 +43,6 @@ async def update_admins(bot):
     global all_admins
     all_admins = set()
 
-    updates = await bot.get_updates()
     for update in updates:
         chat = update.effective_chat
         if chat:
