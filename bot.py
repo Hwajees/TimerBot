@@ -3,7 +3,6 @@ import re
 import time
 import threading
 from datetime import timedelta
-from flask import Flask
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -16,15 +15,6 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID"))
 PORT = int(os.getenv("PORT", 10000))
-
-# =============================
-# تشغيل Flask للحفاظ على عمل البوت
-# =============================
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is running"
 
 # =============================
 # المتغيرات العامة
