@@ -239,4 +239,9 @@ if __name__ == "__main__":
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     threading.Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
-    application.run_polling()
+    application.run_webhook(
+    listen="0.0.0.0",
+    port=PORT,
+    url_path=BOT_TOKEN,
+    webhook_url=f"https://timerbot-dog5.onrender.com/{BOT_TOKEN}"
+)
