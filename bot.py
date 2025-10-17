@@ -5,16 +5,17 @@ import threading
 from datetime import timedelta
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    filters, ContextTypes
+    Application,
+    MessageHandler,
+    filters,
+    ContextTypes
 )
 
 # =============================
 # إعداد المتغيرات من البيئة
 # =============================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID = int(os.getenv("GROUP_ID"))
-PORT = int(os.getenv("PORT", 10000))
+GROUP_ID = int(os.getenv("GROUP_ID", 0))  # ضع 0 إذا لم يكن هناك ID محدد
 
 # =============================
 # المتغيرات العامة
@@ -156,7 +157,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(parts) >= 3:
             field = parts[1].lower()
             value = " ".join(parts[2:])
-            # تحويل كل الأرقام العربية إلى إنجليزية
             value = convert_arabic_numbers(value)
 
             if field in ["عنوان", "title"]:
@@ -225,20 +225,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================
 # تشغيل البوت
 # =============================
-from telegram.ext import Application
-import os
-
-# إنشاء التطبيق باستخدام التوكن من متغيرات البيئة
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
 application = Application.builder().token(BOT_TOKEN).build()
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 10000))
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=f"https://timerbot-dog5.onrender.com/{BOT_TOKEN}"
-    )
-
+    # Polling بدلاً من Webhook
+    application.run_polling()
