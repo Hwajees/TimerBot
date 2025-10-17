@@ -19,6 +19,7 @@ GROUP_ID = int(os.getenv("GROUP_ID", 0))  # ضع 0 إذا لم يكن هناك I
 debate_data = {}
 timers = {}
 lock = threading.Lock()
+active_timers = {}
 
 # =============================
 # أدوات مساعدة
