@@ -194,33 +194,75 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # أوامر أثناء التشغيل
     if data["step"] == "running":
-        if text == "توقف":
-            data["running"] = False
-            await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
+    text_conv = convert_arabic_numbers(text)  # تحويل الأرقام العربية للإنجليزية
+    if text == "توقف":
+        data["running"] = False
+        await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
+        return
+    if text == "استئناف":
+        if data["running"]:
+            await update.message.reply_text("المؤقت يعمل بالفعل.")
             return
-        if text == "استئناف":
-            if data["running"]:
-                await update.message.reply_text("المؤقت يعمل بالفعل.")
-                return
-            data["running"] = True
-            thread = threading.Thread(target=timer_thread, args=(context, chat_id))
-            thread.start()
-            timers[chat_id] = thread
-            await update.message.reply_text("▶️ تم استئناف المؤقت.")
-            return
-        if text == "تبديل":
-            data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
-            data["remaining"] = data["duration"]
-            data["round"] += 1
-            await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
-            return
-        if text == "حالة المناظرة":
-            await send_debate_status(context, chat_id)
-            return
-        if text == "نهاية":
-            await update.message.reply_text("📊 تم إنهاء المناظرة.")
-            debate_data.pop(chat_id, None)
-            return
+        data["running"] = True
+        thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+        thread.start()
+        timers[chat_id] = thread
+        await update.message.reply_text("▶️ تم استئناف المؤقت.")
+        return
+    if text == "تبديل":
+        data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+        data["remaining"] = data["duration"]
+        data["round"] += 1
+        await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
+        return
+    if text == "حالة المناظرة":
+        await send_debate_status(context, chat_id)
+        return
+    if text == "نهاية":
+        await update.message.reply_text("📊 تم إنهاء المناظرة.")
+        debate_data.pop(chat_id, None)
+        return
+
+    # ========= أوامر جديدة للتحكم بالوقت =========
+    if text_conv == "تنازل":
+        # إنهاء الوقت الحالي فورًا
+        next_speaker = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(f"🚨 تنازل {data['current_speaker']} عن المداخلة!\n🔁 الدور ينتقل الآن إلى: {next_speaker}")
+        )
+        data["current_speaker"] = next_speaker
+        data["remaining"] = data["duration"]
+        data["round"] += 1
+        return
+
+    # إضافة الوقت
+    add_match = re.match(r"اضف\s*(\d+)([دث])", text_conv)
+    if add_match:
+        amount = int(add_match.group(1))
+        unit = add_match.group(2)
+        if unit == "د":
+            amount *= 60
+        data["remaining"] += amount
+        await update.message.reply_text(f"✅ تم إضافة {amount if unit=='ث' else amount//60}{unit} للمتحدث الحالي")
+        return
+
+    # إنقاص الوقت
+    sub_match = re.match(r"انقص\s*(\d+)([دث])", text_conv)
+    if sub_match:
+        amount = int(sub_match.group(1))
+        unit = sub_match.group(2)
+        if unit == "د":
+            amount *= 60
+        data["remaining"] = max(0, data["remaining"] - amount)
+        await update.message.reply_text(f"✅ تم إنقاص {amount if unit=='ث' else amount//60}{unit} من المتحدث الحالي")
+        return
+
+    # إعادة وقت المداخلة
+    if text_conv == "اعادة":
+        data["remaining"] = data["duration"]
+        await update.message.reply_text(f"♻️ تم إعادة وقت المداخلة للمتحدث الحالي إلى {data['duration']//60}د")
+        return
 
 # =============================
 # تشغيل البوت
