@@ -62,45 +62,46 @@ def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
         except Exception:
             pass
 
-    last_alert = -1
-    extra_seconds = 0
-    while True:
-        time.sleep(1)
-        with lock:
-            if chat_id not in debate_data:
-                break
-            data = debate_data[chat_id]
-            if not data["running"]:
-                continue
-            data["remaining"] -= 1
+    async def timer_loop():
+        last_alert = -1
+        extra_seconds = 0
 
-            # تنبيه قبل انتهاء الوقت (آخر 30 ثانية، كل 10 ثواني)
-            if 0 < data["remaining"] <= 30 and data["remaining"] % 10 == 0 and data["remaining"] != last_alert:
-                last_alert = data["remaining"]
-                loop.create_task(send_message_safe(
-                    f"⏳ انتبه! {data['current_speaker']} تبقى {format_time(data['remaining'])} على انتهاء المداخلة!"
-                ))
-
-            # انتهاء الوقت
-            if data["remaining"] <= 0:
-                data["running"] = False
-                loop.create_task(send_message_safe(
-                    f"🚨 انتهى وقت {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."
-                ))
-
-        # حساب الوقت الزائد كل 10 ثواني حتى التبديل
-        while not data["running"] and chat_id in debate_data:
-            time.sleep(10)
-            extra_seconds += 10
-            loop.create_task(send_message_safe(
-                f"⌛ الوقت الزائد للمتحدث الحالي {data['current_speaker']}: {format_time(extra_seconds)}"
-            ))
+        while True:
+            await asyncio.sleep(1)
             with lock:
-                if data["running"]:
+                if chat_id not in debate_data:
                     break
+                data = debate_data[chat_id]
+                if not data["running"]:
+                    continue
+                data["remaining"] -= 1
 
-    # تشغيل المهام المعلقة
-    loop.run_until_complete(asyncio.sleep(0))
+                # تنبيه قبل انتهاء الوقت (آخر 30 ثانية، كل 10 ثوانٍ)
+                if 0 < data["remaining"] <= 30 and data["remaining"] % 10 == 0 and data["remaining"] != last_alert:
+                    last_alert = data["remaining"]
+                    await send_message_safe(
+                        f"⏳ انتبه! {data['current_speaker']} تبقى {format_time(data['remaining'])} على انتهاء المداخلة!"
+                    )
+
+                # انتهاء الوقت
+                if data["remaining"] <= 0:
+                    data["running"] = False
+                    await send_message_safe(
+                        f"🚨 انتهى وقت {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."
+                    )
+
+            # حساب الوقت الزائد
+            while not data["running"] and chat_id in debate_data:
+                await asyncio.sleep(10)
+                extra_seconds += 10
+                await send_message_safe(
+                    f"⌛ الوقت الزائد للمتحدث الحالي {data['current_speaker']}: {format_time(extra_seconds)}"
+                )
+                with lock:
+                    if data["running"]:
+                        break
+
+    loop.run_until_complete(timer_loop())
     loop.close()
 
 # =============================
