@@ -92,15 +92,20 @@ def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
 # معالجة الرسائل
 # =============================
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # تجاهل أي تحديث بدون نص
+    if not update.message or not update.message.text:
+        return
+
     chat_id = update.effective_chat.id
     user = update.effective_user
     text = update.message.text.strip()
 
+    # التحقق من صلاحيات المشرفين
     chat_admins = await context.bot.get_chat_administrators(chat_id)
     if not is_admin(user.id, chat_admins):
         return
 
-    # إنشاء مناظرة جديدة
+    # ==================== إنشاء مناظرة جديدة ====================
     if any(word in text for word in ["بوت المؤقت", "المؤقت", "بوت الساعة", "بوت الساعه", "الساعة", "الساعه"]):
         debate_data[chat_id] = {
             "admin": user.id,
@@ -158,12 +163,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ==================== باقي الأوامر بعد بدء الوقت ====================
     text_conv = convert_arabic_numbers(text)
 
+    # بدء المؤقت
+    if data["step"] == "ready" and text == "ابدأ الوقت":
+        data["running"] = True
+        data["step"] = "running"
+        await update.message.reply_text("⏳ تم بدء المناظرة!")
+        thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+        thread.start()
+        timers[chat_id] = thread
+        return
+
+    # أوامر بعد بدء المناظرة
     if data["step"] == "running":
         if text == "توقف":
             data["running"] = False
-            await update.message.reply_text(
-                f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}"
-            )
+            await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
             return
         if text == "استئناف":
             if data["running"]:
@@ -208,9 +222,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if unit == "د":
                 amount *= 60
             data["remaining"] += amount
-            await update.message.reply_text(
-                f"✅ تم إضافة {amount if unit=='ث' else amount//60}{unit} للمتحدث الحالي"
-            )
+            await update.message.reply_text(f"✅ تم إضافة {amount if unit=='ث' else amount//60}{unit} للمتحدث الحالي")
             return
 
         sub_match = re.match(r"انقص\s*(\d+)([دث])", text_conv)
@@ -220,16 +232,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if unit == "د":
                 amount *= 60
             data["remaining"] = max(0, data["remaining"] - amount)
-            await update.message.reply_text(
-                f"✅ تم إنقاص {amount if unit=='ث' else amount//60}{unit} من المتحدث الحالي"
-            )
+            await update.message.reply_text(f"✅ تم إنقاص {amount if unit=='ث' else amount//60}{unit} من المتحدث الحالي")
             return
 
         if text_conv == "اعادة":
             data["remaining"] = data["duration"]
-            await update.message.reply_text(
-                f"♻️ تم إعادة وقت المداخلة للمتحدث الحالي إلى {data['duration']//60}د"
-            )
+            await update.message.reply_text(f"♻️ تم إعادة وقت المداخلة للمتحدث الحالي إلى {data['duration']//60}د")
             return
 
 # =============================
