@@ -52,7 +52,6 @@ async def send_debate_status(context: ContextTypes.DEFAULT_TYPE, chat_id):
     speaker = data["current_speaker"]
     total = data["round"]
     remain = max(0, data["remaining"])
-
     text = (
         "━━━━━━━━━━━━━━━━━━\n"
         f"🎙️ مناظرة: {data['title']}\n"
@@ -160,16 +159,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ==============================
     # تعديل البيانات قبل بدء المناظرة
-    # ==============================
     if text.startswith("تعديل"):
         parts = text.split()
         if len(parts) >= 3:
             field = parts[1].lower()
             value = " ".join(parts[2:])
-            
-            # تحويل الأرقام العربية للإنجليزية عند تعديل الوقت أو الأرقام في المحاور
             value = convert_arabic_numbers(value)
 
             if field in ["عنوان", "title"]:
@@ -227,12 +222,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data["round"] += 1
             await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
             return
+        if text == "حالة المناظرة":
+            await send_debate_status(context, chat_id)
+            return
         if text == "نهاية":
             await update.message.reply_text("📊 تم إنهاء المناظرة.")
             debate_data.pop(chat_id, None)
-            return
-        if text == "حالة المناظرة":
-            await send_debate_status(context, chat_id)
             return
 
 # =============================
