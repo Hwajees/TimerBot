@@ -1,85 +1,69 @@
 import os
 import asyncio
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.error import TelegramError
 
-# ===== المتغيرات =====
-BOT_TOKEN = os.environ.get("BOT_TOKEN")  # ضع توكن البوت هنا أو في environment
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # إذا أردت webhooks
+# الحصول على التوكن من البيئة
+TOKEN = os.getenv("BOT_TOKEN")
 
-admins = set()  # لتخزين معرفات المشرفين
-timers = {}     # لتخزين بيانات الوقت لكل مستخدم/محادثة
-
-# ===== دوال الأوامر =====
+# دالة بدء البوت
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("أهلاً! البوت جاهز للعمل.")
+    user = update.effective_user
+    await update.message.reply_text(
+        f"👋 أهلاً {user.first_name}!\n"
+        "أنا بوت المؤقتات الزمنيّة، جاهز للعمل 🚀"
+    )
 
-async def add_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم إضافة الوقت!")  # ضع منطقك هنا
-
-async def sub_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم نقص الوقت!")  # ضع منطقك هنا
-
-async def pause_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم إيقاف البوت مؤقتًا!")  # ضع منطقك هنا
-
-async def resume_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم استئناف البوت!")  # ضع منطقك هنا
-
-async def resign_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم التنازل عن المشرفية!")  # ضع منطقك هنا
-
-async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("جارٍ إعادة تشغيل البوت...")  # ضع منطقك هنا
-
-# ===== تحديث قائمة المشرفين تلقائيًا =====
+# دالة فحص المشرفين في المجموعة
 async def update_admins(bot):
-    global all_admins
-    all_admins = set()
+    """يتعرف على مشرفي المجموعات التي أُضيف إليها البوت."""
+    try:
+        # يمكنك تحديد مجموعة معينة بفحص ID (اختياري)
+        chat_ids = os.getenv("GROUP_IDS", "")
+        if not chat_ids:
+            print("⚠️ لم يتم تحديد معرف المجموعة في البيئة (GROUP_IDS).")
+            return
+        for chat_id in chat_ids.split(","):
+            chat_id = chat_id.strip()
+            if not chat_id:
+                continue
+            admins = await bot.get_chat_administrators(chat_id)
+            print(f"\n👑 المشرفون في المجموعة {chat_id}:")
+            for admin in admins:
+                print(f"- {admin.user.first_name} (@{admin.user.username or 'بدون اسم مستخدم'})")
+    except TelegramError as e:
+        print(f"حدث خطأ أثناء جلب المشرفين: {e}")
 
-    for update in updates:
-        chat = update.effective_chat
-        if chat:
-            admins = await bot.get_chat_administrators(chat.id)
-            admin_ids = [admin.user.id for admin in admins]
-            all_admins.update(admin_ids)
-
-    print(f"تم تحديث قائمة المشرفين: {all_admins}")
-
-# ===== دوال المساعدة =====
-async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("الأمر غير معروف.")
-
-# ===== إعداد البوت =====
+# دالة رئيسية لتشغيل البوت
 async def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    print("🚀 بدء تشغيل البوت...")
 
-    # تسجيل الأوامر
+    # إعداد التطبيق
+    app = Application.builder().token(TOKEN).build()
+
+    # إضافة الأوامر
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("addtime", add_time))
-    app.add_handler(CommandHandler("subtime", sub_time))
-    app.add_handler(CommandHandler("pause", pause_timer))
-    app.add_handler(CommandHandler("resume", resume_timer))
-    app.add_handler(CommandHandler("resign", resign_admin))
-    app.add_handler(CommandHandler("restart", restart_bot))
 
-    # أي أوامر غير معروفة
-    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    # تشغيل Webhook بدلاً من polling
+    PORT = int(os.environ.get("PORT", 8080))
+    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_URL').replace('https://', '')}/{TOKEN}"
 
-    # تحديث قائمة المشرفين عند بدء البوت
+    await app.bot.delete_webhook()
+    await app.bot.set_webhook(WEBHOOK_URL)
+
+    print(f"✅ Webhook مضبوط بنجاح على {WEBHOOK_URL}")
+
+    # جلب المشرفين (اختياري)
     await update_admins(app.bot)
 
-    # تشغيل البوت على polling داخل المحادثة الخاصة
-    await app.start()
-    await app.updater.start_polling()
-    print("البوت جاهز للعمل في المحادثة الخاصة.")
-    await asyncio.Event().wait()  # إبقاء البوت يعمل
+    # تشغيل السيرفر ليستقبل التحديثات من Telegram
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN,
+        webhook_url=WEBHOOK_URL,
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
