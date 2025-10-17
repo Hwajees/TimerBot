@@ -52,6 +52,7 @@ async def send_debate_status(context: ContextTypes.DEFAULT_TYPE, chat_id):
     speaker = data["current_speaker"]
     total = data["round"]
     remain = max(0, data["remaining"])
+
     text = (
         "━━━━━━━━━━━━━━━━━━\n"
         f"🎙️ مناظرة: {data['title']}\n"
@@ -159,37 +160,37 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-   # تعديل البيانات قبل بدء المناظرة
-if text.startswith("تعديل"):
-    parts = text.split()
-    if len(parts) >= 3:
-        # تحويل الأرقام العربية في الحقل إلى إنجليزية
-        field = convert_arabic_numbers(parts[1].lower())
-        value = " ".join(parts[2:])
-        value = convert_arabic_numbers(value)
+    # تعديل البيانات قبل بدء المناظرة
+    if text.startswith("تعديل"):
+        parts = text.split()
+        if len(parts) >= 3:
+            # تحويل الأرقام العربية إلى إنجليزية في كل جزء
+            field = convert_arabic_numbers(parts[1].lower())
+            value = " ".join(parts[2:])
+            value = convert_arabic_numbers(value)
 
-        if field in ["عنوان", "title"]:
-            data["title"] = value
-            await update.message.reply_text(f"✅ تم تعديل عنوان المناظرة: {value}")
-            return
-        if field in ["محاور1", "speaker1"]:
-            data["speaker1"] = value
-            await update.message.reply_text(f"✅ تم تعديل اسم المحاور الأول: {value}")
-            return
-        if field in ["محاور2", "speaker2"]:
-            data["speaker2"] = value
-            await update.message.reply_text(f"✅ تم تعديل اسم المحاور الثاني: {value}")
-            return
-        if field in ["وقت", "time"]:
-            match = re.match(r"(\d+)", value)
-            if match:
-                minutes = int(match.group(1))
-                data["duration"] = minutes * 60
-                data["remaining"] = data["duration"]
-                await update.message.reply_text(f"✅ تم تعديل الوقت لكل مداخلة: {minutes}د")
+            if field in ["عنوان", "title"]:
+                data["title"] = value
+                await update.message.reply_text(f"✅ تم تعديل عنوان المناظرة: {value}")
                 return
-    await update.message.reply_text("❌ لم أفهم ما تريد تعديله. استخدم: عنوان / محاور1 / محاور2 / وقت")
-    return
+            if field in ["محاور1", "speaker1"]:
+                data["speaker1"] = value
+                await update.message.reply_text(f"✅ تم تعديل اسم المحاور الأول: {value}")
+                return
+            if field in ["محاور2", "speaker2"]:
+                data["speaker2"] = value
+                await update.message.reply_text(f"✅ تم تعديل اسم المحاور الثاني: {value}")
+                return
+            if field in ["وقت", "time"]:
+                match = re.search(r"\d+", value)
+                if match:
+                    minutes = int(match.group(0))
+                    data["duration"] = minutes * 60
+                    data["remaining"] = data["duration"]
+                    await update.message.reply_text(f"✅ تم تعديل الوقت لكل مداخلة: {minutes}د")
+                    return
+        await update.message.reply_text("❌ لم أفهم ما تريد تعديله. استخدم: عنوان / محاور1 / محاور2 / وقت")
+        return
 
     # بدء الوقت
     if text == "ابدأ الوقت" and data["step"] == "ready":
@@ -223,12 +224,12 @@ if text.startswith("تعديل"):
             data["round"] += 1
             await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
             return
-        if text == "حالة المناظرة":
-            await send_debate_status(context, chat_id)
-            return
         if text == "نهاية":
             await update.message.reply_text("📊 تم إنهاء المناظرة.")
             debate_data.pop(chat_id, None)
+            return
+        if text == "حالة المناظرة":
+            await send_debate_status(context, chat_id)
             return
 
 # =============================
