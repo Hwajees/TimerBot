@@ -159,9 +159,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-# ==============================
 # تعديل البيانات قبل بدء المناظرة
-# ==============================
 if text.startswith("تعديل"):
     parts = text.split()
     if len(parts) >= 3:
@@ -183,7 +181,6 @@ if text.startswith("تعديل"):
             await update.message.reply_text(f"✅ تم تعديل اسم المحاور الثاني: {value}")
             return
         if field in ["وقت", "time"]:
-            # البحث عن أول رقم في النص بعد تحويله للأرقام الإنجليزية
             match = re.search(r"\d+", value)
             if match:
                 minutes = int(match.group(0))
