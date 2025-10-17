@@ -4,10 +4,10 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.error import TelegramError
 
-# الحصول على التوكن من البيئة
+
 TOKEN = os.getenv("BOT_TOKEN")
 
-# دالة بدء البوت
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update.message.reply_text(
@@ -15,11 +15,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "أنا بوت المؤقتات الزمنيّة، جاهز للعمل 🚀"
     )
 
-# دالة فحص المشرفين في المجموعة
+
 async def update_admins(bot):
-    """يتعرف على مشرفي المجموعات التي أُضيف إليها البوت."""
     try:
-        # يمكنك تحديد مجموعة معينة بفحص ID (اختياري)
         chat_ids = os.getenv("GROUP_IDS", "")
         if not chat_ids:
             print("⚠️ لم يتم تحديد معرف المجموعة في البيئة (GROUP_IDS).")
@@ -35,17 +33,13 @@ async def update_admins(bot):
     except TelegramError as e:
         print(f"حدث خطأ أثناء جلب المشرفين: {e}")
 
-# دالة رئيسية لتشغيل البوت
+
 async def main():
     print("🚀 بدء تشغيل البوت...")
 
-    # إعداد التطبيق
     app = Application.builder().token(TOKEN).build()
-
-    # إضافة الأوامر
     app.add_handler(CommandHandler("start", start))
 
-    # تشغيل Webhook بدلاً من polling
     PORT = int(os.environ.get("PORT", 8080))
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_URL').replace('https://', '')}/{TOKEN}"
 
@@ -54,10 +48,8 @@ async def main():
 
     print(f"✅ Webhook مضبوط بنجاح على {WEBHOOK_URL}")
 
-    # جلب المشرفين (اختياري)
     await update_admins(app.bot)
 
-    # تشغيل السيرفر ليستقبل التحديثات من Telegram
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -65,5 +57,11 @@ async def main():
         webhook_url=WEBHOOK_URL,
     )
 
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.get_event_loop().run_until_complete(main())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
