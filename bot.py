@@ -66,40 +66,50 @@ def timer_thread(context: ContextTypes.DEFAULT_TYPE, chat_id):
         last_alert = -1
         extra_seconds = 0
 
-        while True:
+        while chat_id in debate_data:
             await asyncio.sleep(1)
             with lock:
-                if chat_id not in debate_data:
-                    break
-                data = debate_data[chat_id]
-                if not data["running"]:
+                data = debate_data.get(chat_id)
+                if not data or not data["running"]:
                     continue
+
+                # تناقص الوقت
                 data["remaining"] -= 1
 
-                # تنبيه قبل انتهاء الوقت (آخر 30 ثانية، كل 10 ثوانٍ)
+                # 🔹 تنبيه آخر 30 ثانية
                 if 0 < data["remaining"] <= 30 and data["remaining"] % 10 == 0 and data["remaining"] != last_alert:
                     last_alert = data["remaining"]
                     await send_message_safe(
                         f"⏳ انتبه! {data['current_speaker']} تبقى {format_time(data['remaining'])} على انتهاء المداخلة!"
                     )
 
-                # انتهاء الوقت
-                if data["remaining"] <= 0:
+                # 🔹 انتهاء الوقت
+                if data["remaining"] <= 0 and not data.get("extra_mode", False):
                     data["running"] = False
+                    data["extra_mode"] = True
+                    data["extra_time"] = 0
                     await send_message_safe(
                         f"🚨 انتهى وقت {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."
                     )
 
-            # حساب الوقت الزائد
-            while not data["running"] and chat_id in debate_data:
+            # 🔹 معالجة الوقت الزائد
+            with lock:
+                data = debate_data.get(chat_id)
+                if not data:
+                    break
+                if data.get("extra_mode", False) and not data["running"]:
+                    data["extra_time"] = data.get("extra_time", 0) + 10
+
+            if data.get("extra_mode", False) and not data["running"]:
                 await asyncio.sleep(10)
-                extra_seconds += 10
-                await send_message_safe(
-                    f"⌛ الوقت الزائد للمتحدث الحالي {data['current_speaker']}: {format_time(extra_seconds)}"
-                )
+                # تحقق أن نفس المتحدث لا يزال مستمر في الوضع الزائد
                 with lock:
-                    if data["running"]:
-                        break
+                    d = debate_data.get(chat_id)
+                    if not d or d["running"] or not d.get("extra_mode", False):
+                        continue
+                    await send_message_safe(
+                        f"⌛ الوقت الزائد للمتحدث الحالي {d['current_speaker']}: {format_time(d['extra_time'])}"
+                    )
 
     loop.run_until_complete(timer_loop())
     loop.close()
@@ -227,9 +237,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("▶️ تم استئناف المؤقت.")
             return
         if text_conv == "تبديل":
+            # إيقاف أي مؤقت أو مهام حالية قبل التبديل
+            if chat_id in active_timers:
+                active_timers[chat_id].cancel()
+                del active_timers[chat_id]
+            # 🟢 أضف هذا السطر هنا لضبط المؤقت الجديد عند التبديل
             data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
             data["remaining"] = data["duration"]
             data["round"] += 1
+            # إعادة تشغيل المؤقت للمتحدث الجديد
+            active_timers[chat_id] = asyncio.create_task(start_timer(context, chat_id))
+            # ثم أرسل رسالة التبديل (بعد ضبط البيانات)
             await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
             return
         if text_conv == "حالة المناظرة":
