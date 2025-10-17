@@ -6,7 +6,8 @@ from datetime import timedelta
 from flask import Flask
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder, MessageHandler, filters, ContextTypes
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    filters, ContextTypes
 )
 
 # =============================
@@ -41,26 +42,21 @@ def format_time(seconds):
 def is_admin(user_id, admins):
     return any(admin.user.id == user_id for admin in admins)
 
+# تحويل الأرقام العربية إلى إنجليزية
 def convert_arabic_numbers(text):
     arabic_to_english = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
     return text.translate(arabic_to_english)
 
 async def send_debate_status(context: ContextTypes.DEFAULT_TYPE, chat_id):
-    if chat_id not in debate_data:
-        await context.bot.send_message(chat_id=chat_id, text="لا توجد مناظرة حالياً.")
-        return
     data = debate_data[chat_id]
-    speaker = data["current_speaker"] if data.get("current_speaker") else "-"
-    total = data.get("round", 1)
-    remain = max(0, data.get("remaining", 0))
-    title = data.get("title", "-")
-    speaker1 = data.get("speaker1", "-")
-    speaker2 = data.get("speaker2", "-")
+    speaker = data["current_speaker"]
+    total = data["round"]
+    remain = max(0, data["remaining"])
+
     text = (
         "━━━━━━━━━━━━━━━━━━\n"
-        f"🎙️ مناظرة: {title}\n"
+        f"🎙️ مناظرة: {data['title']}\n"
         f"👤 المتحدث الآن: {speaker}\n"
-        f"👥 المحاورون: 🟢 {speaker1} | 🔵 {speaker2}\n"
         f"⏱️ الوقت المتبقي: {format_time(remain)}\n"
         f"⏳ الجولة: {total}\n"
         "━━━━━━━━━━━━━━━━━━"
@@ -164,30 +160,31 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ==============================
     # تعديل البيانات قبل بدء المناظرة
+    # ==============================
     if text.startswith("تعديل"):
         parts = text.split()
         if len(parts) >= 3:
             field = parts[1].lower()
             value = " ".join(parts[2:])
-            # تعديل العنوان
+            
+            # تحويل الأرقام العربية للإنجليزية عند تعديل الوقت أو الأرقام في المحاور
+            value = convert_arabic_numbers(value)
+
             if field in ["عنوان", "title"]:
                 data["title"] = value
                 await update.message.reply_text(f"✅ تم تعديل عنوان المناظرة: {value}")
                 return
-            # تعديل المحاور1
-            if field in ["محاور1", "محاور١", "speaker1"]:
+            if field in ["محاور1", "speaker1"]:
                 data["speaker1"] = value
                 await update.message.reply_text(f"✅ تم تعديل اسم المحاور الأول: {value}")
                 return
-            # تعديل المحاور2
             if field in ["محاور2", "speaker2"]:
                 data["speaker2"] = value
                 await update.message.reply_text(f"✅ تم تعديل اسم المحاور الثاني: {value}")
                 return
-            # تعديل الوقت
             if field in ["وقت", "time"]:
-                value = convert_arabic_numbers(value)
                 match = re.match(r"(\d+)", value)
                 if match:
                     minutes = int(match.group(1))
@@ -199,7 +196,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # بدء الوقت
-    if text == "ابدأ الوقت" and data["step"] in ["ready", "duration"]:
+    if text == "ابدأ الوقت" and data["step"] == "ready":
         data["running"] = True
         data["step"] = "running"
         await update.message.reply_text("⏳ تم بدء المناظرة!")
@@ -209,37 +206,34 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # أوامر أثناء التشغيل
-    if text == "توقف" and data["step"] == "running":
-        data["running"] = False
-        await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
-        return
-
-    if text == "استئناف" and data["step"] == "running":
-        if data["running"]:
-            await update.message.reply_text("المؤقت يعمل بالفعل.")
+    if data["step"] == "running":
+        if text == "توقف":
+            data["running"] = False
+            await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
             return
-        data["running"] = True
-        thread = threading.Thread(target=timer_thread, args=(context, chat_id))
-        thread.start()
-        timers[chat_id] = thread
-        await update.message.reply_text("▶️ تم استئناف المؤقت.")
-        return
-
-    if text == "تبديل" and data["step"] == "running":
-        data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
-        data["remaining"] = data["duration"]
-        data["round"] += 1
-        await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
-        return
-
-    if text == "نهاية":
-        await update.message.reply_text("📊 تم إنهاء المناظرة.")
-        debate_data.pop(chat_id, None)
-        return
-
-    if text == "حالة المناظرة":
-        await send_debate_status(context, chat_id)
-        return
+        if text == "استئناف":
+            if data["running"]:
+                await update.message.reply_text("المؤقت يعمل بالفعل.")
+                return
+            data["running"] = True
+            thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+            thread.start()
+            timers[chat_id] = thread
+            await update.message.reply_text("▶️ تم استئناف المؤقت.")
+            return
+        if text == "تبديل":
+            data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+            data["remaining"] = data["duration"]
+            data["round"] += 1
+            await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
+            return
+        if text == "نهاية":
+            await update.message.reply_text("📊 تم إنهاء المناظرة.")
+            debate_data.pop(chat_id, None)
+            return
+        if text == "حالة المناظرة":
+            await send_debate_status(context, chat_id)
+            return
 
 # =============================
 # تشغيل البوت
