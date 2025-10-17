@@ -237,20 +237,29 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timers[chat_id] = thread
             await update.message.reply_text("▶️ تم استئناف المؤقت.")
             return
-        if text_conv == "تبديل":
-            # إيقاف أي مؤقت أو مهام حالية قبل التبديل
-            if chat_id in active_timers:
-                active_timers[chat_id].cancel()
-                del active_timers[chat_id]
-            # 🟢 أضف هذا السطر هنا لضبط المؤقت الجديد عند التبديل
-            data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
-            data["remaining"] = data["duration"]
-            data["round"] += 1
-            # إعادة تشغيل المؤقت للمتحدث الجديد
-            active_timers[chat_id] = asyncio.create_task(start_timer(context, chat_id))
-            # ثم أرسل رسالة التبديل (بعد ضبط البيانات)
-            await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
-            return
+       if text_conv == "تبديل":
+           # إيقاف أي مؤقت أو مهام حالية قبل التبديل
+           if chat_id in timers:
+               # إنهاء الـ thread القديم (يمكننا استخدام flag داخل البيانات)
+               data["running"] = False
+               timers[chat_id].join()  # انتظر انتهاء الـ thread
+               del timers[chat_id]
+
+           # تبديل المتحدث الحالي
+           data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+           data["remaining"] = data["duration"]
+           data["round"] += 1
+           data["running"] = True  # إعادة تشغيل المؤقت
+
+           # تشغيل thread جديد للمؤقت
+           thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+           thread.start()
+           timers[chat_id] = thread
+
+           # إرسال رسالة التبديل
+           await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
+           return
+
         if text_conv == "حالة المناظرة":
             await send_debate_status(context, chat_id)
             return
