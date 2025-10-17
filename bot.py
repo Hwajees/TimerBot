@@ -159,37 +159,38 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-# تعديل البيانات قبل بدء المناظرة
-if text.startswith("تعديل"):
-    parts = text.split()
-    if len(parts) >= 3:
-        field = parts[1].lower()
-        value = " ".join(parts[2:])
-        # تحويل كل الأرقام العربية إلى إنجليزية
-        value = convert_arabic_numbers(value)
+    # ===========================
+    # تعديل البيانات قبل بدء المناظرة
+    if text.startswith("تعديل"):
+        parts = text.split()
+        if len(parts) >= 3:
+            field = parts[1].lower()
+            value = " ".join(parts[2:])
+            # تحويل كل الأرقام العربية إلى إنجليزية
+            value = convert_arabic_numbers(value)
 
-        if field in ["عنوان", "title"]:
-            data["title"] = value
-            await update.message.reply_text(f"✅ تم تعديل عنوان المناظرة: {value}")
-            return
-        if field in ["محاور1", "محاور١", "speaker1"]:
-            data["speaker1"] = value
-            await update.message.reply_text(f"✅ تم تعديل اسم المحاور الأول: {value}")
-            return
-        if field in ["محاور2", "محاور٢", "speaker2"]:
-            data["speaker2"] = value
-            await update.message.reply_text(f"✅ تم تعديل اسم المحاور الثاني: {value}")
-            return
-        if field in ["وقت", "time"]:
-            match = re.search(r"\d+", value)
-            if match:
-                minutes = int(match.group(0))
-                data["duration"] = minutes * 60
-                data["remaining"] = data["duration"]
-                await update.message.reply_text(f"✅ تم تعديل الوقت لكل مداخلة: {minutes}د")
+            if field in ["عنوان", "title"]:
+                data["title"] = value
+                await update.message.reply_text(f"✅ تم تعديل عنوان المناظرة: {value}")
                 return
-    await update.message.reply_text("❌ لم أفهم ما تريد تعديله. استخدم: عنوان / محاور1 / محاور2 / وقت")
-    return
+            if field in ["محاور1", "محاور١", "speaker1"]:
+                data["speaker1"] = value
+                await update.message.reply_text(f"✅ تم تعديل اسم المحاور الأول: {value}")
+                return
+            if field in ["محاور2", "محاور٢", "speaker2"]:
+                data["speaker2"] = value
+                await update.message.reply_text(f"✅ تم تعديل اسم المحاور الثاني: {value}")
+                return
+            if field in ["وقت", "time"]:
+                match = re.search(r"\d+", value)
+                if match:
+                    minutes = int(match.group(0))
+                    data["duration"] = minutes * 60
+                    data["remaining"] = data["duration"]
+                    await update.message.reply_text(f"✅ تم تعديل الوقت لكل مداخلة: {minutes}د")
+                    return
+        await update.message.reply_text("❌ لم أفهم ما تريد تعديله. استخدم: عنوان / محاور1 / محاور2 / وقت")
+        return
 
     # بدء الوقت
     if text == "ابدأ الوقت" and data["step"] == "ready":
