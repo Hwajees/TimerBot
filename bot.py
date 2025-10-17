@@ -1,67 +1,45 @@
 import os
-import asyncio
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-from telegram.error import TelegramError
-
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from flask import Flask, request
 
 TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = f"https://timerbot-fjtl.onrender.com/{TOKEN}"
 
+app = Flask(__name__)
 
+# ✅ أوامر البوت
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await update.message.reply_text(
-        f"👋 أهلاً {user.first_name}!\n"
-        "أنا بوت المؤقتات الزمنيّة، جاهز للعمل 🚀"
-    )
+    await update.message.reply_text("مرحباً! أنا بوت المؤقت ⏳")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("أرسل /start لبدء الاستخدام.")
 
-async def update_admins(bot):
-    try:
-        chat_ids = os.getenv("GROUP_IDS", "")
-        if not chat_ids:
-            print("⚠️ لم يتم تحديد معرف المجموعة في البيئة (GROUP_IDS).")
-            return
-        for chat_id in chat_ids.split(","):
-            chat_id = chat_id.strip()
-            if not chat_id:
-                continue
-            admins = await bot.get_chat_administrators(chat_id)
-            print(f"\n👑 المشرفون في المجموعة {chat_id}:")
-            for admin in admins:
-                print(f"- {admin.user.first_name} (@{admin.user.username or 'بدون اسم مستخدم'})")
-    except TelegramError as e:
-        print(f"حدث خطأ أثناء جلب المشرفين: {e}")
+# ✅ إنشاء تطبيق البوت
+application = ApplicationBuilder().token(TOKEN).build()
 
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
 
-async def main():
-    print("🚀 بدء تشغيل البوت...")
+# ✅ تعيين Webhook
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "ok", 200
 
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-
-    PORT = int(os.environ.get("PORT", 8080))
-    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_URL').replace('https://', '')}/{TOKEN}"
-
-    await app.bot.delete_webhook()
-    await app.bot.set_webhook(WEBHOOK_URL)
-
-    print(f"✅ Webhook مضبوط بنجاح على {WEBHOOK_URL}")
-
-    await update_admins(app.bot)
-
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=TOKEN,
-        webhook_url=WEBHOOK_URL,
-    )
-
+# ✅ نقطة البداية (Render سيبدأ من هنا)
+@app.route("/")
+def index():
+    return "بوت المؤقت يعمل ✅", 200
 
 if __name__ == "__main__":
-    try:
-        asyncio.get_event_loop().run_until_complete(main())
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(main())
+    import asyncio
+
+    async def run():
+        print("🚀 بدء تشغيل البوت...")
+        await application.bot.set_webhook(WEBHOOK_URL)
+        print(f"✅ Webhook مضبوط بنجاح على {WEBHOOK_URL}")
+
+    asyncio.run(run())
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
