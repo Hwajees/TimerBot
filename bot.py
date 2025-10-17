@@ -21,12 +21,16 @@ application = ApplicationBuilder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 
+# سنتخدم هذا الـ loop لجميع الـ async calls
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 # نقطة استقبال Webhook
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    # تشغيل معالجة التحديث داخل loop الحالي
-    asyncio.create_task(application.process_update(update))
+    # معالجة التحديث داخل loop الموجود مسبقًا
+    asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
     return "ok", 200
 
 # صفحة فحص
@@ -39,13 +43,12 @@ async def main():
     await application.initialize()
     await application.bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook مضبوط بنجاح على {WEBHOOK_URL}")
-    # تشغيل التطبيق في الخلفية ليبقى جاهز لمعالجة التحديثات
+    # تشغيل التطبيق
     await application.start()
-    # لا ننهي التطبيق نهائيًا، نتركه مستمرًا
+    # نتركه يعمل
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    # تشغيل main في thread منفصل قبل Flask
-    loop = asyncio.get_event_loop()
+    # تشغيل main في الخلفية
     loop.create_task(main())
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
