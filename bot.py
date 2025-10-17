@@ -211,4 +211,31 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("المؤقت يعمل بالفعل.")
                 return
             data["running"] = True
-            if chat_id not in timers or not
+            if chat_id not in timers or not timers[chat_id].is_alive():
+                thread = threading.Thread(target=timer_thread, args=(context, chat_id))
+                thread.start()
+                timers[chat_id] = thread
+            await update.message.reply_text("▶️ تم استئناف المؤقت.")
+            return
+        if text == "تبديل":
+            data["current_speaker"] = data["speaker2"] if data["current_speaker"] == data["speaker1"] else data["speaker1"]
+            data["remaining"] = data["duration"]
+            data["round"] += 1
+            await update.message.reply_text(f"🔁 تم التبديل إلى: {data['current_speaker']}")
+            return
+        if text == "حالة المناظرة":
+            await send_debate_status(context, chat_id)
+            return
+        if text == "نهاية":
+            await update.message.reply_text("📊 تم إنهاء المناظرة.")
+            debate_data.pop(chat_id, None)
+            return
+
+# =============================
+# تشغيل البوت
+# =============================
+application = Application.builder().token(BOT_TOKEN).build()
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+
+if __name__ == "__main__":
+    application.run_polling()
