@@ -225,6 +225,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================
 # تشغيل البوت
 # =============================
+from telegram.ext import Application
+import os
+
+# إنشاء التطبيق باستخدام التوكن من متغيرات البيئة
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+application = Application.builder().token(BOT_TOKEN).build()
+
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 10000))
     application.run_webhook(
@@ -233,3 +241,4 @@ if __name__ == "__main__":
         url_path=BOT_TOKEN,
         webhook_url=f"https://timerbot-dog5.onrender.com/{BOT_TOKEN}"
     )
+
