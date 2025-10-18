@@ -11,7 +11,7 @@ from telegram.ext import Application, MessageHandler, filters, ContextTypes
 # إعداد المتغيرات من البيئة
 # =============================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID = int(os.getenv("GROUP_ID", 0))  # ضع 0 إذا لم يكن هناك ID محدد
+GROUP_ID = int(os.getenv("GROUP_ID", 0))
 
 # =============================
 # المتغيرات العامة
@@ -185,6 +185,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ==================== تعديل البيانات ====================
     if text_conv.startswith("تعديل "):
         parts = text_conv[6:].split(" ", 1)
         if len(parts) == 2:
@@ -207,6 +208,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ صيغة الأمر غير صحيحة.")
         return
 
+    # ==================== أوامر المؤقت ====================
     if text_conv == "ابدأ الوقت":
         data["running"] = True
         data["step"] = "running"
@@ -235,6 +237,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("▶️ تم استئناف المؤقت.")
             return
 
+        # ==================== تبديل و تنازل ====================
         if text_conv in ["تبديل", "تنازل"]:
             prev_speaker = data["current_speaker"]
             next_speaker = data["speaker2"] if prev_speaker == data["speaker1"] else data["speaker1"]
@@ -242,7 +245,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             next_color = "🟢" if next_speaker==data["speaker1"] else "🔵"
 
             if text_conv=="تبديل":
-                # إضافة الوقت الزائد السابق للمداخلة الجديدة
                 total_time = data["duration"] + data.get("extra_time",0)
                 extra_added = data.get("extra_time",0)
                 data["current_speaker"] = next_speaker
@@ -252,7 +254,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data["extra_mode"] = False
                 data["running"] = True
 
-                # إنهاء thread القديم وإعادة تشغيله
                 if chat_id in timers:
                     data["running"] = False
                     timers[chat_id].join()
@@ -285,15 +286,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          f"🔁 الدور ينتقل الآن إلى: {next_color} {next_speaker}")
             return
 
+        # ==================== حالة المناظرة ====================
         if text_conv == "حالة المناظرة":
             await send_debate_status(context, chat_id)
             return
 
+        # ==================== نهاية المناظرة ====================
         if text_conv == "نهاية":
-            # ملخص النهاية
             s1 = data["speaker1"]
             s2 = data["speaker2"]
-            used1 = data["summary"]["speaker1"]["used"] + data["duration"] # مبسط: يمكن حساب كل مداخلة بدقة أكبر
+            used1 = data["summary"]["speaker1"]["used"] + data["duration"]
             used2 = data["summary"]["speaker2"]["used"] + data["duration"]
             over1 = data["summary"]["speaker1"]["over"]
             over2 = data["summary"]["speaker2"]["over"]
@@ -317,6 +319,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             debate_data.pop(chat_id, None)
             return
 
+        # ==================== إضافة / إنقاص الوقت ====================
         add_match = re.match(r"اضف\s*(\d+)([دث])", text_conv)
         if add_match:
             amount = int(add_match.group(1))
