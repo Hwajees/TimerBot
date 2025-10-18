@@ -170,14 +170,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["step"] = "ready"
 
         for sp in [data["speaker1"], data["speaker2"]]:
-            if sp not in data["summary"]:
-                data["summary"][sp] = {"used": 0, "over": 0, "turns": 0}
+            data["summary"][sp] = {"used": 0, "over": 0, "turns": 0}
 
         await update.message.reply_text(
+            "━━━━━━━━━━━━━━━━\n"
             f"✅ تم تسجيل البيانات:\n"
             f"🎙️ مناظرة: {data['title']}\n"
             f"👤 المحاورون: 🟢 {data['speaker1']} | 🔵 {data['speaker2']}\n"
             f"⏱️ الوقت لكل مداخلة: {minutes}د\n"
+            "━━━━━━━━━━━━━━━━\n"
             "يمكنك تعديل أي عنصر باستخدام: 'تعديل عنوان/محاور1/محاور2/وقت القيمة الجديدة'\n"
             "اكتب 'ابدأ الوقت' للبدء."
         )
@@ -189,7 +190,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(parts) == 2:
             field, new_val = parts
             new_val = new_val.strip()
-
             if field in ["عنوان", "محاور1", "محاور2", "وقت"]:
                 if field == "عنوان":
                     data["title"] = new_val
@@ -215,7 +215,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     minutes = int(match.group(1))
                     data["duration"] = minutes * 60
                     data["remaining"] = data["duration"]
-
                 await update.message.reply_text(f"✅ تم تعديل {field} إلى: {new_val}")
                 return
         await update.message.reply_text("❌ صيغة الأمر غير صحيحة.")
@@ -235,7 +234,55 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # أثناء التشغيل
     if data["step"] == "running":
-        if text_conv == "تبديل" or text_conv == "تنازل":
+        # التوقف
+        if text_conv == "توقف":
+            data["running"] = False
+            await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
+            return
+
+        # استئناف
+        if text_conv == "استئناف":
+            if data["running"]:
+                await update.message.reply_text("المؤقت يعمل بالفعل.")
+                return
+            data["running"] = True
+            if chat_id in tasks:
+                tasks[chat_id].cancel()
+            tasks[chat_id] = asyncio.create_task(timer_task(context, chat_id))
+            await update.message.reply_text("▶️ تم استئناف المؤقت.")
+            return
+
+        # إضافة أو إنقاص الوقت
+        add_match = re.match(r"اضف\s*(\d+)([دث])", text_conv)
+        if add_match:
+            amount = int(add_match.group(1))
+            unit = add_match.group(2)
+            if unit == "د":
+                amount *= 60
+            data["remaining"] += amount
+            await update.message.reply_text(f"✅ تم إضافة {amount if unit=='ث' else amount//60}{unit} للمتحدث الحالي")
+            return
+
+        sub_match = re.match(r"انقص\s*(\d+)([دث])", text_conv)
+        if sub_match:
+            amount = int(sub_match.group(1))
+            unit = sub_match.group(2)
+            if unit == "د":
+                amount *= 60
+            data["remaining"] = max(0, data["remaining"] - amount)
+            await update.message.reply_text(f"✅ تم إنقاص {amount if unit=='ث' else amount//60}{unit} من المتحدث الحالي")
+            return
+
+        # إعادة الجولة
+        if text_conv == "اعادة":
+            data["remaining"] = data["duration"]
+            data["extra_time"] = 0
+            data["extra_mode"] = False
+            await update.message.reply_text(f"♻️ تم إعادة وقت الجولة الحالية للمتحدث الحالي إلى {data['duration']//60}د")
+            return
+
+        # تبديل أو تنازل
+        if text_conv in ["تبديل", "تنازل"]:
             prev_speaker = data["current_speaker"]
             next_speaker = data["speaker2"] if prev_speaker == data["speaker1"] else data["speaker1"]
 
@@ -266,32 +313,33 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if text_conv == "تنازل":
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=(
-                        "━━━━━━━━━━━━━━━━\n"
-                        f"🚨 تنازل {color_prev} {prev_speaker} عن المداخلة!\n"
-                        f"🔁 الدور ينتقل الآن إلى: {color_next} {next_speaker}\n"
-                        "━━━━━━━━━━━━━━━━"
-                    )
+                    text=("━━━━━━━━━━━━━━━━\n"
+                          f"🚨 تنازل {color_prev} {prev_speaker} عن المداخلة!\n"
+                          f"🔁 الدور ينتقل الآن إلى: {color_next} {next_speaker}\n"
+                          "━━━━━━━━━━━━━━━━")
                 )
             else:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=(
-                        "━━━━━━━━━━━━━━━━\n"
-                        f"🔁 تم التبديل إلى: {color_next} {next_speaker}\n"
-                        f"الوقت الزائد المضاف: +{format_time(over_time)}\n"
-                        f"الوقت الإجمالي للمداخلة: {format_time(used_time)}\n"
-                        "━━━━━━━━━━━━━━━━"
-                    )
+                    text=("━━━━━━━━━━━━━━━━\n"
+                          f"🔁 تم التبديل إلى: {color_next} {next_speaker}\n"
+                          f"الوقت الزائد المضاف: +{format_time(over_time)}\n"
+                          f"الوقت الإجمالي للمداخلة: {format_time(used_time)}\n"
+                          "━━━━━━━━━━━━━━━━")
                 )
             return
 
+        # حالة المناظرة
+        if text_conv == "حالة المناظرة":
+            await send_debate_status(context, chat_id)
+            return
+
+        # نهاية المناظرة
         if text_conv == "نهاية":
             data["running"] = False
             if chat_id in tasks:
                 tasks[chat_id].cancel()
                 del tasks[chat_id]
-
             summary_lines = [
                 "━━━━━━━━━━━━━━━━",
                 "نهاية المناظرة – عرض النتائج",
@@ -307,7 +355,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 total_time += sp_data["used"]
             summary_lines.append(f"🕒 الوقت الكلي: {format_time(total_time)}")
             summary_lines.append("━━━━━━━━━━━━━━━━")
-
             await update.message.reply_text("\n".join(summary_lines))
             debate_data.pop(chat_id, None)
             return
