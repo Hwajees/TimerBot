@@ -120,7 +120,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not any(admin.user.id == user.id for admin in chat_admins):
         return
 
-    if any(word in text for word in ["بوت المؤقت", "المؤقت", "بوت الساعة", "بوت الساعه", "الساعة", "الساعه"]):
+    if any(word in text for word in ["بوت المؤقت", "بوت الساعة", "بوت الساعه"]):
         debate_data[chat_id] = {
             "admin": user.id,
             "step": "batch_input",
