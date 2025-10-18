@@ -20,8 +20,9 @@ tasks = {}        # كل chat_id له task واحدة للمؤقت
 # =============================
 # أدوات مساعدة
 # =============================
-def format_time(seconds):
-    return str(timedelta(seconds=int(seconds)))
+def format_time_mmss(seconds):
+    m, s = divmod(int(seconds), 60)
+    return f"{m:02d}:{s:02d}"
 
 def convert_arabic_numbers(text):
     arabic_to_english = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
@@ -32,13 +33,14 @@ async def send_debate_status(context: ContextTypes.DEFAULT_TYPE, chat_id):
     speaker = data["current_speaker"]
     remain = max(0, data["remaining"])
     extra = data.get("extra_time", 0)
+    color = "🟢" if speaker == data["speaker1"] else "🔵"
     text = (
         "━━━━━━━━━━━━━━━━━━\n"
         f"🎙️ مناظرة: {data['title']}\n"
-        f"👤 المتحدث الآن: {speaker}\n"
-        f"⏱️ الوقت المتبقي: {format_time(remain)}\n"
+        f"👤 المتحدث الآن: {color} {speaker}\n"
+        f"⏱️ الوقت المتبقي: {format_time_mmss(remain)}\n"
         f"⏳ الجولة: {data['round']}\n"
-        f"🕐 الوقت الزائد: {format_time(extra)}\n"
+        f"🕐 الوقت الزائد: +{format_time_mmss(extra)}\n"
         "━━━━━━━━━━━━━━━━━━"
     )
     await context.bot.send_message(chat_id=chat_id, text=text)
@@ -55,31 +57,35 @@ async def timer_task(context: ContextTypes.DEFAULT_TYPE, chat_id):
             data["remaining"] -= 1
             if 0 < data["remaining"] <= 30 and data["remaining"] % 10 == 0 and data["remaining"] != last_alert:
                 last_alert = data["remaining"]
+                color = "🟢" if data["current_speaker"] == data["speaker1"] else "🔵"
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏳ انتبه! {data['current_speaker']} تبقى {format_time(data['remaining'])} على انتهاء المداخلة!"
+                    text=f"⏳ انتبه! {color} {data['current_speaker']} تبقى {format_time_mmss(data['remaining'])} على انتهاء المداخلة!"
                 )
         else:
+            # بدء الوقت الزائد
             if not data.get("extra_mode", False):
                 data["extra_mode"] = True
                 data["extra_time"] = 0
+                color = "🟢" if data["current_speaker"] == data["speaker1"] else "🔵"
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"🚨 انتهى وقت {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."
+                    text=f"🚨 انتهى وقت {color} {data['current_speaker']}!\n⏱️ بدأ حساب الوقت الزائد..."
                 )
 
+            # الوقت الزائد
             await asyncio.sleep(1)
             data["extra_time"] += 1
             if data["extra_time"] <= 30:
                 if data["extra_time"] % 10 == 0 or data["extra_time"] == 1:
                     await context.bot.send_message(
                         chat_id=chat_id,
-                        text=f"⌛ الوقت الزائد للمتحدث الحالي {data['current_speaker']}: {format_time(data['extra_time'])}"
+                        text=f"⌛ الوقت الزائد للمتحدث الحالي 🔴 {data['current_speaker']}: +{format_time_mmss(data['extra_time'])}"
                     )
             else:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏱️ توقف وقت {data['current_speaker']}!\n🚨 يجب تبديل المحاور..."
+                    text=f"⏱️ توقف وقت 🔴 {data['current_speaker']}!\n🚨 يجب تبديل المحاور..."
                 )
                 data["running"] = False
                 break
@@ -113,7 +119,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "current_speaker": "",
             "round": 1,
             "extra_time": 0,
-            "extra_mode": False
+            "extra_mode": False,
+            "summary": { "speaker1": {"used":0, "over":0, "turns":0}, "speaker2":{"used":0,"over":0,"turns":0} }
         }
         await update.message.reply_text(
             "تم استدعاء البوت! أرسل بيانات المناظرة بالترتيب مفصولة بسطر لكل واحد:\n"
@@ -151,23 +158,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎙️ مناظرة: {data['title']}\n"
             f"👥 المحاورون: 🟢 {data['speaker1']} | 🔵 {data['speaker2']}\n"
             f"⏱️ الوقت لكل مداخلة: {minutes}د\n"
+            "يمكنك تعديل أي عنصر باستخدام: 'تعديل عنوان/محاور1/محاور2/وقت القيمة الجديدة'\n"
             "اكتب 'ابدأ الوقت' للبدء."
         )
         return
 
     # ==================== أوامر تعديل البيانات ====================
     if text_conv.startswith("تعديل "):
-        parts = text_conv.split(" ", 2)
-        if len(parts) >= 3:
-            field = parts[1].strip()
-            new_val = parts[2].strip()
+        parts = text_conv[6:].split(" ", 1)
+        if len(parts) == 2:
+            field, new_val = parts
+            new_val = new_val.strip()
             if field in ["عنوان", "محاور1", "محاور2", "وقت"]:
-                if field == "عنوان":
-                    data["title"] = new_val
-                elif field == "محاور1":
-                    data["speaker1"] = new_val
-                elif field == "محاور2":
-                    data["speaker2"] = new_val
+                if field == "عنوان": data["title"] = new_val
+                elif field == "محاور1": data["speaker1"] = new_val
+                elif field == "محاور2": data["speaker2"] = new_val
                 elif field == "وقت":
                     match = re.match(r"(\d+)\s*د", convert_arabic_numbers(new_val))
                     if not match:
@@ -178,7 +183,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     data["remaining"] = data["duration"]
                 await update.message.reply_text(f"✅ تم تعديل {field} إلى: {new_val}")
                 return
-        await update.message.reply_text("❌ صيغة الأمر غير صحيحة. مثال: تعديل عنوان الامامة في القرآن")
+        await update.message.reply_text("❌ صيغة الأمر غير صحيحة.")
         return
 
     # ==================== أوامر بعد البدء ====================
@@ -187,48 +192,63 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["step"] = "running"
         data["extra_mode"] = False
         data["extra_time"] = 0
+        # إلغاء أي task قديمة
         if chat_id in tasks:
             tasks[chat_id].cancel()
         tasks[chat_id] = asyncio.create_task(timer_task(context, chat_id))
-        await update.message.reply_text(f"▶️ بدأ الوقت للمتحدث: {data['current_speaker']}")
+        color = "🟢" if data["current_speaker"] == data["speaker1"] else "🔵"
+        await update.message.reply_text(f"▶️ بدأ الوقت للمتحدث: {color} {data['current_speaker']}")
         return
 
     if data["step"] == "running":
         if text_conv == "توقف":
             data["running"] = False
-            await update.message.reply_text(f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time(data['remaining'])}")
+            color = "🟢" if data["current_speaker"] == data["speaker1"] else "🔵"
+            await update.message.reply_text(
+                f"⏸️ تم إيقاف المؤقت مؤقتًا.\n⏱️ الوقت المتبقي: {format_time_mmss(data['remaining'])}"
+            )
             return
+
         if text_conv == "استئناف":
             if data["running"]:
                 await update.message.reply_text("المؤقت يعمل بالفعل.")
                 return
             data["running"] = True
-            if chat_id in tasks:
-                tasks[chat_id].cancel()
+            if chat_id in tasks: tasks[chat_id].cancel()
             tasks[chat_id] = asyncio.create_task(timer_task(context, chat_id))
             await update.message.reply_text("▶️ تم استئناف المؤقت.")
             return
+
         if text_conv in ["تبديل", "تنازل"]:
             prev_speaker = data["current_speaker"]
             next_speaker = data["speaker2"] if prev_speaker == data["speaker1"] else data["speaker1"]
 
+            # حساب الوقت الزائد السابق للعرض
+            extra_prev = data.get("extra_time", 0)
+            total_time = data["duration"] + extra_prev
+
             data["current_speaker"] = next_speaker
-            data["remaining"] = data["duration"] + data.get("extra_time", 0)
+            data["remaining"] = data["duration"] + extra_prev
             data["round"] += 1
             data["extra_time"] = 0
             data["extra_mode"] = False
             data["running"] = True
 
-            if chat_id in tasks:
-                tasks[chat_id].cancel()
+            if chat_id in tasks: tasks[chat_id].cancel()
             tasks[chat_id] = asyncio.create_task(timer_task(context, chat_id))
 
+            color_next = "🟢" if next_speaker == data["speaker1"] else "🔵"
             if text_conv == "تنازل":
+                color_prev = "🟢" if prev_speaker == data["speaker1"] else "🔵"
                 await context.bot.send_message(chat_id=chat_id,
-                    text=f"🚨 تنازل {prev_speaker} عن المداخلة!\n🔁 الدور ينتقل الآن إلى: {next_speaker}")
+                    text=f"🚨 تنازل {color_prev} {prev_speaker} عن المداخلة!\n🔁 الدور ينتقل الآن إلى: {color_next} {next_speaker}"
+                )
             else:
                 await context.bot.send_message(chat_id=chat_id,
-                    text=f"🔁 تم التبديل إلى: {next_speaker}")
+                    text=f"🔁 تم التبديل إلى: {color_next} {next_speaker}\n"
+                         f"الوقت الزائد المضاف: +{format_time_mmss(extra_prev)}\n"
+                         f"الوقت الإجمالي للمداخلة: {format_time_mmss(total_time)}"
+                )
             return
 
         if text_conv == "حالة المناظرة":
@@ -237,19 +257,24 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if text_conv == "نهاية":
             data["running"] = False
-            if chat_id in tasks:
+            if chat_id in tasks: 
                 tasks[chat_id].cancel()
                 del tasks[chat_id]
-            await update.message.reply_text("📊 تم إنهاء المناظرة.")
+            await update.message.reply_text(
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"نهاية المناظرة – عرض النتائج\n📊 المناظرة: {data['title']}\n"
+                f"🟢 {data['speaker1']}\n🔵 {data['speaker2']}\n"
+                f"━━━━━━━━━━━━━━━━━━"
+            )
             debate_data.pop(chat_id, None)
             return
 
+        # إضافة/إنقاص الوقت
         add_match = re.match(r"اضف\s*(\d+)([دث])", text_conv)
         if add_match:
             amount = int(add_match.group(1))
             unit = add_match.group(2)
-            if unit == "د":
-                amount *= 60
+            if unit == "د": amount *= 60
             data["remaining"] += amount
             await update.message.reply_text(f"✅ تم إضافة {amount if unit=='ث' else amount//60}{unit} للمتحدث الحالي")
             return
@@ -258,8 +283,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if sub_match:
             amount = int(sub_match.group(1))
             unit = sub_match.group(2)
-            if unit == "د":
-                amount *= 60
+            if unit == "د": amount *= 60
             data["remaining"] = max(0, data["remaining"] - amount)
             await update.message.reply_text(f"✅ تم إنقاص {amount if unit=='ث' else amount//60}{unit} من المتحدث الحالي")
             return
@@ -268,7 +292,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data["remaining"] = data["duration"]
             data["extra_time"] = 0
             data["extra_mode"] = False
-            await update.message.reply_text(f"♻️ تم إعادة وقت المداخلة للمتحدث الحالي إلى {data['duration']//60}د")
+            await update.message.reply_text(
+                f"♻️ تم إعادة وقت المداخلة للمتحدث الحالي إلى {data['duration']//60}د"
+            )
             return
 
 # =============================
